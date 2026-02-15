@@ -11,6 +11,7 @@ import {
   truncate,
 } from '../utils/format';
 import type { Workflow, WorkflowStatus } from '../types/circleci';
+import { TriggerParams } from '../components/TriggerParams';
 
 type FilterKey = 'all' | 'api' | 'schedule' | 'tag' | 'other';
 
@@ -319,9 +320,17 @@ function TriggeredPipelineRow({ triggered }: { triggered: TriggeredPipeline }) {
         </span>
       </button>
 
-      {/* Workflows (shown when expanded) */}
+      {/* Expanded details */}
       {expanded && (
         <div className="bg-slate-950/50 border-t border-slate-800/50">
+          {/* Trigger parameters */}
+          {pipeline.trigger_parameters && Object.keys(pipeline.trigger_parameters).length > 0 && (
+            <div className="px-6 py-3 border-b border-slate-800/30">
+              <TriggerParams pipeline={pipeline} />
+            </div>
+          )}
+
+          {/* Workflows */}
           {loadingWf ? (
             <div className="px-6 py-3">
               <Skeleton className="h-8 w-full" />
