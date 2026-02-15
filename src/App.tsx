@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { Setup } from './pages/Setup';
 import { Branches } from './pages/Branches';
 import { Pipelines } from './pages/Pipelines';
+import { Triggers } from './pages/Triggers';
 import { WorkflowDetail } from './pages/WorkflowDetail';
 
 function AppRoutes() {
@@ -39,6 +40,18 @@ function AppRoutes() {
           isAuthenticated ? (
             <Layout>
               <Pipelines />
+            </Layout>
+          ) : (
+            <Navigate to="/setup" replace />
+          )
+        }
+      />
+      <Route
+        path="/triggers"
+        element={
+          isAuthenticated ? (
+            <Layout>
+              <Triggers />
             </Layout>
           ) : (
             <Navigate to="/setup" replace />

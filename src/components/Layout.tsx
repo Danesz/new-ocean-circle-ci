@@ -95,6 +95,11 @@ function buildBreadcrumbs(pathname: string, projectSlug: string | null): Crumb[]
     }
   }
 
+  if (segments[0] === 'triggers' && projectSlug) {
+    crumbs.push({ label: projectSlug.split('/').slice(-1)[0], path: '/branches' });
+    crumbs.push({ label: 'Triggers', path: '/triggers' });
+  }
+
   if (segments[0] === 'pipeline' && segments[1]) {
     if (projectSlug) {
       crumbs.push({ label: projectSlug.split('/').slice(-1)[0], path: '/branches' });
