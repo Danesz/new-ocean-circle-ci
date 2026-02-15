@@ -10,6 +10,7 @@ import {
   shortSha,
   truncate,
 } from '../utils/format';
+import { TriggerParams } from '../components/TriggerParams';
 import type { Pipeline, Workflow, WorkflowStatus } from '../types/circleci';
 
 export function Pipelines() {
@@ -138,6 +139,8 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
             )}
             <span>{pipeline.trigger.type}</span>
           </div>
+
+          <TriggerParams pipeline={pipeline} />
         </div>
       </div>
 

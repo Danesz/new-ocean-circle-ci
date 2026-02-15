@@ -5,6 +5,9 @@ import type {
   Workflow,
   Job,
   JobDetail,
+  TestResult,
+  Artifact,
+  BuildDetailV1,
   BranchSummary,
   WorkflowStatus,
 } from '../types/circleci';
@@ -231,6 +234,53 @@ export function useJobDetail(jobNumber: number | null) {
   const fetcher = useCallback(async (): Promise<JobDetail> => {
     if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
     return client.getJobDetail(projectSlug, jobNumber);
+  }, [client, projectSlug, jobNumber]);
+
+  return useAsyncData(
+    client && projectSlug && jobNumber ? fetcher : null,
+    [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch test results for a job */
+export function useJobTests(jobNumber: number | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<TestResult[]> => {
+    if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
+    const { items } = await client.getJobTests(projectSlug, jobNumber);
+    return items;
+  }, [client, projectSlug, jobNumber]);
+
+  return useAsyncData(
+    client && projectSlug && jobNumber ? fetcher : null,
+    [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch artifacts for a job */
+export function useJobArtifacts(jobNumber: number | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<Artifact[]> => {
+    if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
+    const { items } = await client.getJobArtifacts(projectSlug, jobNumber);
+    return items;
+  }, [client, projectSlug, jobNumber]);
+
+  return useAsyncData(
+    client && projectSlug && jobNumber ? fetcher : null,
+    [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch build steps from v1.1 API (includes log output URLs) */
+export function useBuildSteps(jobNumber: number | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<BuildDetailV1> => {
+    if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
+    return client.getBuildSteps(projectSlug, jobNumber);
   }, [client, projectSlug, jobNumber]);
 
   return useAsyncData(

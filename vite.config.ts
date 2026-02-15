@@ -10,6 +10,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/circleci/, '/api/v2'),
       },
+      '/api/circleci-v1': {
+        target: 'https://circleci.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/circleci-v1/, '/api/v1.1'),
+      },
     },
   },
 })
