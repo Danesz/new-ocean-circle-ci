@@ -6,6 +6,7 @@ import type {
   Job,
   JobDetail,
   BranchSummary,
+  WorkflowStatus,
 } from '../types/circleci';
 import { isActiveStatus } from '../components/StatusBadge';
 
@@ -58,21 +59,31 @@ function useAsyncData<T>(
   return { data, loading, error, refetch };
 }
 
-/** Fetch branches (derived from recent pipelines) */
+export interface BranchesResult {
+  branches: BranchSummary[];
+  triggeredCount: number;
+}
+
+/** Fetch branches (derived from recent pipelines), excluding branchless pipelines */
 export function useBranches() {
   const { client, projectSlug } = useAuth();
 
-  const fetcher = useCallback(async (): Promise<BranchSummary[]> => {
+  const fetcher = useCallback(async (): Promise<BranchesResult> => {
     if (!client || !projectSlug) throw new Error('Not authenticated');
 
     const { items: pipelines } = await client.getPipelines(projectSlug);
 
-    // Group by branch, keep only the latest pipeline per branch
+    // Separate branch pipelines from branchless (triggered) pipelines
     const branchMap = new Map<string, Pipeline>();
+    let triggeredCount = 0;
+
     for (const p of pipelines) {
-      const branch = p.vcs.branch ?? '(no branch)';
-      if (!branchMap.has(branch)) {
-        branchMap.set(branch, p);
+      if (!p.vcs.branch) {
+        triggeredCount++;
+        continue;
+      }
+      if (!branchMap.has(p.vcs.branch)) {
+        branchMap.set(p.vcs.branch, p);
       }
     }
 
@@ -106,10 +117,72 @@ export function useBranches() {
       return new Date(b.latestPipeline.created_at).getTime() - new Date(a.latestPipeline.created_at).getTime();
     });
 
-    return branches;
+    return { branches, triggeredCount };
   }, [client, projectSlug]);
 
   return useAsyncData(client && projectSlug ? fetcher : null, [client, projectSlug], true);
+}
+
+/** A triggered pipeline with its resolved workflow status */
+export interface TriggeredPipeline {
+  pipeline: Pipeline;
+  workflowStatus?: WorkflowStatus;
+  triggerLabel: string;
+}
+
+/** Fetch pipelines that have no branch (API triggers, schedules, tags, etc.) */
+export function useTriggeredPipelines() {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<TriggeredPipeline[]> => {
+    if (!client || !projectSlug) throw new Error('Not authenticated');
+
+    const { items: pipelines } = await client.getPipelines(projectSlug);
+
+    // Keep only branchless pipelines
+    const branchless = pipelines.filter((p) => !p.vcs.branch);
+
+    // Fetch workflow statuses in parallel
+    const results: TriggeredPipeline[] = [];
+    const batchSize = 6;
+    for (let i = 0; i < branchless.length; i += batchSize) {
+      const batch = branchless.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (pipeline) => {
+          let workflowStatus: WorkflowStatus | undefined;
+          try {
+            const { items: workflows } = await client.getWorkflows(pipeline.id);
+            workflowStatus = aggregateWorkflowStatus(workflows);
+          } catch {
+            // ignore
+          }
+          const triggerLabel = deriveTriggerLabel(pipeline);
+          return { pipeline, workflowStatus, triggerLabel };
+        }),
+      );
+      results.push(...batchResults);
+    }
+
+    return results;
+  }, [client, projectSlug]);
+
+  return useAsyncData(client && projectSlug ? fetcher : null, [client, projectSlug], true);
+}
+
+/** Derive a human-readable trigger label from a pipeline */
+function deriveTriggerLabel(pipeline: Pipeline): string {
+  if (pipeline.vcs.tag) return `tag: ${pipeline.vcs.tag}`;
+  switch (pipeline.trigger.type) {
+    case 'schedule':
+    case 'scheduled_pipeline':
+      return 'Scheduled';
+    case 'api':
+      return 'API';
+    case 'webhook':
+      return 'Webhook';
+    default:
+      return pipeline.trigger.type || 'Trigger';
+  }
 }
 
 /** Fetch pipelines for a specific branch */
