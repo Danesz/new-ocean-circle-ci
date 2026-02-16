@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Job, TestResult, Artifact, BuildStep } from '../types/circleci';
 import { StatusBadge } from './StatusBadge';
 import { Skeleton } from './Layout';
@@ -19,7 +19,39 @@ export function JobPanel({ job, onClose }: Props) {
   const { data: buildDetail } = useBuildSteps(jobNum);
 
   const failedTests = tests?.filter((t) => t.result === 'failure') ?? [];
+  const skippedTests = tests?.filter((t) => t.result === 'skipped') ?? [];
+  const passedTests = tests?.filter((t) => t.result === 'success') ?? [];
   const steps = buildDetail?.steps ?? [];
+
+  // Find the "interesting" step to auto-expand:
+  // - First failed/timedout step, OR
+  // - The longest-running step (for successful builds)
+  const autoExpandIndex = useMemo(() => {
+    if (steps.length === 0) return -1;
+
+    const failedIdx = steps.findIndex((s) => {
+      const a = s.actions[0];
+      return a && (a.status === 'failed' || a.status === 'timedout');
+    });
+    if (failedIdx !== -1) return failedIdx;
+
+    // For non-failed builds, auto-expand the longest step
+    let longestIdx = -1;
+    let longestTime = 0;
+    steps.forEach((s, i) => {
+      const a = s.actions[0];
+      if (a?.run_time_millis && a.run_time_millis > longestTime && a.has_output) {
+        longestTime = a.run_time_millis;
+        longestIdx = i;
+      }
+    });
+    return longestIdx;
+  }, [steps]);
+
+  // Total step duration for timeline bars
+  const totalStepDuration = useMemo(() => {
+    return steps.reduce((sum, s) => sum + (s.actions[0]?.run_time_millis ?? 0), 0);
+  }, [steps]);
 
   return (
     <div className="bg-slate-900 border-l border-slate-800 w-96 shrink-0 flex flex-col h-full overflow-hidden">
@@ -106,23 +138,31 @@ export function JobPanel({ job, onClose }: Props) {
           </>
         ) : null}
 
-        {/* Failed tests */}
-        {failedTests.length > 0 && (
-          <Section title={`Failed Tests (${failedTests.length})`}>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {failedTests.map((test, i) => (
-                <FailedTestCard key={i} test={test} />
-              ))}
-            </div>
+        {/* Test summary */}
+        {tests && tests.length > 0 && (
+          <Section title={`Tests (${tests.length})`}>
+            {/* Summary bar */}
+            <TestSummaryBar
+              passed={passedTests.length}
+              failed={failedTests.length}
+              skipped={skippedTests.length}
+            />
+
+            {/* Failed tests (expandable) */}
+            {failedTests.length > 0 && (
+              <div className="space-y-2 mt-3 max-h-60 overflow-y-auto">
+                {failedTests.map((test, i) => (
+                  <FailedTestCard key={i} test={test} />
+                ))}
+              </div>
+            )}
           </Section>
         )}
 
-        {/* Test summary (if we have test data but no failures) */}
-        {tests && tests.length > 0 && failedTests.length === 0 && (
-          <Section title="Tests">
-            <div className="text-sm text-emerald-400">
-              All {tests.length} test{tests.length !== 1 ? 's' : ''} passed
-            </div>
+        {/* Step duration timeline */}
+        {steps.length > 0 && totalStepDuration > 0 && (
+          <Section title="Step Timeline">
+            <StepTimeline steps={steps} totalDuration={totalStepDuration} />
           </Section>
         )}
 
@@ -131,7 +171,11 @@ export function JobPanel({ job, onClose }: Props) {
           <Section title={`Steps (${steps.length})`}>
             <div className="space-y-1">
               {steps.map((step, i) => (
-                <StepRow key={i} step={step} />
+                <StepRow
+                  key={i}
+                  step={step}
+                  defaultExpanded={i === autoExpandIndex}
+                />
               ))}
             </div>
           </Section>
@@ -169,6 +213,125 @@ export function JobPanel({ job, onClose }: Props) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Visual pass/fail/skip bar with counts */
+function TestSummaryBar({
+  passed,
+  failed,
+  skipped,
+}: {
+  passed: number;
+  failed: number;
+  skipped: number;
+}) {
+  const total = passed + failed + skipped;
+  if (total === 0) return null;
+
+  const pctPassed = (passed / total) * 100;
+  const pctFailed = (failed / total) * 100;
+  const pctSkipped = (skipped / total) * 100;
+
+  return (
+    <div>
+      {/* Stacked bar */}
+      <div className="flex h-2 rounded-full overflow-hidden bg-slate-800">
+        {pctPassed > 0 && (
+          <div
+            className="bg-emerald-500 transition-all"
+            style={{ width: `${pctPassed}%` }}
+          />
+        )}
+        {pctFailed > 0 && (
+          <div
+            className="bg-red-500 transition-all"
+            style={{ width: `${pctFailed}%` }}
+          />
+        )}
+        {pctSkipped > 0 && (
+          <div
+            className="bg-slate-600 transition-all"
+            style={{ width: `${pctSkipped}%` }}
+          />
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 mt-1.5 text-xs">
+        {passed > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-emerald-400">{passed} passed</span>
+          </span>
+        )}
+        {failed > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-500" />
+            <span className="text-red-400">{failed} failed</span>
+          </span>
+        )}
+        {skipped > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-slate-600" />
+            <span className="text-slate-500">{skipped} skipped</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Horizontal bar chart of step durations */
+function StepTimeline({
+  steps,
+  totalDuration,
+}: {
+  steps: BuildStep[];
+  totalDuration: number;
+}) {
+  return (
+    <div className="space-y-1">
+      {steps.map((step, i) => {
+        const action = step.actions[0];
+        if (!action) return null;
+
+        const ms = action.run_time_millis ?? 0;
+        const pct = totalDuration > 0 ? (ms / totalDuration) * 100 : 0;
+        const isFailed = action.status === 'failed' || action.status === 'timedout';
+
+        // Skip steps with negligible duration
+        if (pct < 1 && !isFailed) return null;
+
+        const barColor = isFailed
+          ? 'bg-red-500'
+          : action.status === 'success'
+            ? 'bg-emerald-500/70'
+            : action.status === 'running'
+              ? 'bg-sky-500'
+              : 'bg-slate-700';
+
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <span
+              className={`text-xs truncate w-24 shrink-0 ${isFailed ? 'text-red-400' : 'text-slate-500'}`}
+              title={step.name}
+            >
+              {step.name}
+            </span>
+            <div className="flex-1 h-2.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${barColor} transition-all`}
+                style={{ width: `${Math.max(pct, 2)}%` }}
+              />
+            </div>
+            <span className={`text-xs w-10 text-right shrink-0 ${isFailed ? 'text-red-400' : 'text-slate-600'}`}>
+              {ms > 0 ? formatDuration(ms) : '—'}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -215,9 +378,15 @@ function FailedTestCard({ test }: { test: TestResult }) {
 }
 
 /** A single step row with expandable log */
-function StepRow({ step }: { step: BuildStep }) {
+function StepRow({
+  step,
+  defaultExpanded,
+}: {
+  step: BuildStep;
+  defaultExpanded: boolean;
+}) {
   const { client } = useAuth();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [log, setLog] = useState<string | null>(null);
   const [logLoading, setLogLoading] = useState(false);
 
@@ -235,7 +404,7 @@ function StepRow({ step }: { step: BuildStep }) {
         ? 'text-sky-400'
         : 'text-slate-500';
 
-  const statusIcon = isFailed ? '✗' : action.status === 'success' ? '✓' : '○';
+  const statusIcon = isFailed ? '\u2717' : action.status === 'success' ? '\u2713' : '\u25CB';
 
   const loadLog = useCallback(async () => {
     if (!client || !action.output_url || log !== null) return;
@@ -249,6 +418,13 @@ function StepRow({ step }: { step: BuildStep }) {
       setLogLoading(false);
     }
   }, [client, action.output_url, log]);
+
+  // Auto-load log when defaultExpanded
+  useEffect(() => {
+    if (defaultExpanded && action.has_output && log === null) {
+      loadLog();
+    }
+  }, [defaultExpanded, action.has_output, log, loadLog]);
 
   const handleToggle = () => {
     const willExpand = !expanded;
