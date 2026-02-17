@@ -42,6 +42,7 @@ function stepLogProxy(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [react(), stepLogProxy()],
   server: {
     proxy: {

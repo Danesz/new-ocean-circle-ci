@@ -17,15 +17,32 @@ import type {
   JobMetrics,
 } from '../types/circleci';
 
+/**
+ * Detect whether we're running in Vite dev mode (proxy available)
+ * or a static production build (call CircleCI directly).
+ */
+const IS_DEV = import.meta.env.DEV;
+const DEFAULT_BASE_V2 = IS_DEV ? '/api/circleci' : 'https://circleci.com/api/v2';
+const DEFAULT_BASE_V1 = IS_DEV ? '/api/circleci-v1' : 'https://circleci.com/api/v1.1';
+
 export class CircleCIClient {
   private token: string;
   private baseUrl: string;
   private baseUrlV1: string;
 
-  constructor(token: string, baseUrl = '/api/circleci', baseUrlV1 = '/api/circleci-v1') {
+  constructor(token: string, baseUrl = DEFAULT_BASE_V2, baseUrlV1 = DEFAULT_BASE_V1) {
     this.token = token;
     this.baseUrl = baseUrl;
     this.baseUrlV1 = baseUrlV1;
+  }
+
+  private buildUrl(path: string, base?: string): URL {
+    const prefix = base ?? this.baseUrl;
+    // If the base is an absolute URL (https://...), use it directly
+    if (prefix.startsWith('http')) {
+      return new URL(`${prefix}${path}`);
+    }
+    return new URL(`${prefix}${path}`, window.location.origin);
   }
 
   private async request<T>(
@@ -33,7 +50,7 @@ export class CircleCIClient {
     params?: Record<string, string>,
     base?: string,
   ): Promise<T> {
-    const url = new URL(`${base ?? this.baseUrl}${path}`, window.location.origin);
+    const url = this.buildUrl(path, base);
     if (params) {
       Object.entries(params).forEach(([k, v]) => {
         if (v) url.searchParams.set(k, v);
@@ -62,7 +79,7 @@ export class CircleCIClient {
     path: string,
     body?: Record<string, unknown>,
   ): Promise<T> {
-    const url = new URL(`${this.baseUrl}${path}`, window.location.origin);
+    const url = this.buildUrl(path);
     const res = await fetch(url.toString(), {
       method: 'POST',
       headers: {
@@ -181,7 +198,7 @@ export class CircleCIClient {
 
   /** Raw request that doesn't throw on 404 for specific callers */
   private async requestRaw<T>(path: string, base: string): Promise<T> {
-    const url = new URL(`${base}${path}`, window.location.origin);
+    const url = this.buildUrl(path, base);
     const res = await fetch(url.toString(), {
       headers: { 'Circle-Token': this.token },
     });
@@ -291,12 +308,31 @@ export class CircleCIClient {
     await this.post(`/project/${projectSlug}/job/${jobNumber}/cancel`);
   }
 
-  /** Fetch log output from a step action's output_url via server proxy (avoids CORS) */
+  /**
+   * Fetch log output from a step action's output_url.
+   * In dev mode, uses the Vite server proxy to avoid CORS.
+   * In production (static hosting), attempts a direct fetch.
+   */
   async getStepLog(outputUrl: string): Promise<LogOutput[]> {
-    const proxyUrl = `/api/step-log?url=${encodeURIComponent(outputUrl)}`;
-    const res = await fetch(proxyUrl);
-    if (!res.ok) throw new Error(`Failed to fetch log: ${res.status}`);
-    return res.json();
+    if (IS_DEV) {
+      // Use server-side proxy in dev (avoids CORS)
+      const proxyUrl = `/api/step-log?url=${encodeURIComponent(outputUrl)}`;
+      const res = await fetch(proxyUrl);
+      if (!res.ok) throw new Error(`Failed to fetch log: ${res.status}`);
+      return res.json();
+    }
+
+    // Production: try direct fetch (may fail due to CORS on S3 URLs)
+    try {
+      const res = await fetch(outputUrl);
+      if (!res.ok) throw new Error(`Failed to fetch log: ${res.status}`);
+      return res.json();
+    } catch {
+      throw new Error(
+        'Step logs are unavailable in static hosting mode due to CORS restrictions. ' +
+        'View logs directly in CircleCI.',
+      );
+    }
   }
 }
 
