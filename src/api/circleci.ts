@@ -138,9 +138,10 @@ export class CircleCIClient {
     );
   }
 
-  /** Fetch log output from a step action's output_url (pre-signed S3 URL) */
+  /** Fetch log output from a step action's output_url via server proxy (avoids CORS) */
   async getStepLog(outputUrl: string): Promise<LogOutput[]> {
-    const res = await fetch(outputUrl);
+    const proxyUrl = `/api/step-log?url=${encodeURIComponent(outputUrl)}`;
+    const res = await fetch(proxyUrl);
     if (!res.ok) throw new Error(`Failed to fetch log: ${res.status}`);
     return res.json();
   }

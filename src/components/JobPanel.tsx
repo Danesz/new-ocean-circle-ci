@@ -389,10 +389,12 @@ function StepRow({
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [log, setLog] = useState<string | null>(null);
   const [logLoading, setLogLoading] = useState(false);
+  const [logError, setLogError] = useState<string | null>(null);
 
   const action = step.actions[0]; // Primary action
   if (!action) return null;
 
+  const hasLog = action.has_output && !!action.output_url;
   const isFailed = action.status === 'failed' || action.status === 'timedout';
   const duration = action.run_time_millis ? formatDuration(action.run_time_millis) : null;
 
@@ -409,36 +411,62 @@ function StepRow({
   const loadLog = useCallback(async () => {
     if (!client || !action.output_url || log !== null) return;
     setLogLoading(true);
+    setLogError(null);
     try {
       const output = await client.getStepLog(action.output_url);
       setLog(output.map((o) => o.message).join(''));
-    } catch {
-      setLog('(failed to load log)');
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : 'Failed to load log');
+      setLog(null);
     } finally {
       setLogLoading(false);
     }
   }, [client, action.output_url, log]);
 
+  const retryLog = useCallback(async () => {
+    if (!client || !action.output_url) return;
+    setLog(null);
+    setLogError(null);
+    setLogLoading(true);
+    try {
+      const output = await client.getStepLog(action.output_url);
+      setLog(output.map((o) => o.message).join(''));
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : 'Failed to load log');
+    } finally {
+      setLogLoading(false);
+    }
+  }, [client, action.output_url]);
+
   // Auto-load log when defaultExpanded
   useEffect(() => {
-    if (defaultExpanded && action.has_output && log === null) {
+    if (defaultExpanded && hasLog && log === null && !logError) {
       loadLog();
     }
-  }, [defaultExpanded, action.has_output, log, loadLog]);
+  }, [defaultExpanded, hasLog, log, logError, loadLog]);
 
   const handleToggle = () => {
+    if (!hasLog) return;
     const willExpand = !expanded;
     setExpanded(willExpand);
-    if (willExpand && log === null && action.has_output) {
+    if (willExpand && log === null && !logError) {
       loadLog();
     }
   };
 
   return (
-    <div className={`rounded ${isFailed ? 'bg-red-950/20' : ''}`}>
+    <div className={`rounded-md border ${
+      isFailed
+        ? 'bg-red-950/20 border-red-900/30'
+        : expanded
+          ? 'bg-slate-800/30 border-slate-700/50'
+          : 'border-transparent hover:bg-slate-800/30 hover:border-slate-700/30'
+    } transition-colors`}>
       <button
         onClick={handleToggle}
-        className="w-full text-left flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800/50 rounded transition-colors"
+        className={`w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-md transition-colors ${
+          hasLog ? 'cursor-pointer' : 'cursor-default'
+        }`}
       >
         <span className={`text-xs shrink-0 w-3 text-center ${statusColor}`}>
           {statusIcon}
@@ -449,7 +477,17 @@ function StepRow({
         {duration && (
           <span className="text-xs text-slate-600 shrink-0">{duration}</span>
         )}
-        {action.has_output && (
+        {hasLog && (
+          <span className={`inline-flex items-center gap-1 text-xs shrink-0 transition-colors ${
+            expanded ? 'text-sky-400' : 'text-slate-600 group-hover:text-slate-400'
+          }`}>
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+              <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 10.5a.75.75 0 01.75-.75h7.5a.75.75 0 010 1.5h-7.5a.75.75 0 01-.75-.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10z" clipRule="evenodd" />
+            </svg>
+            {expanded ? '' : 'log'}
+          </span>
+        )}
+        {hasLog && (
           <svg
             viewBox="0 0 20 20"
             fill="currentColor"
@@ -463,12 +501,26 @@ function StepRow({
           </svg>
         )}
       </button>
-      {expanded && action.has_output && (
-        <div className="px-2 pb-2">
+      {expanded && hasLog && (
+        <div className="px-2.5 pb-2.5">
           {logLoading ? (
-            <Skeleton className="h-16 w-full" />
+            <div className="space-y-1">
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-5/6" />
+              <Skeleton className="h-3 w-4/6" />
+            </div>
+          ) : logError ? (
+            <div className="text-xs p-2 bg-red-950/30 border border-red-900/30 rounded text-red-400 flex items-center justify-between">
+              <span>Failed to load log</span>
+              <button
+                onClick={retryLog}
+                className="text-red-300 hover:text-red-100 underline transition-colors"
+              >
+                Retry
+              </button>
+            </div>
           ) : log ? (
-            <pre className="text-xs bg-slate-950 border border-slate-800 rounded p-2 overflow-x-auto max-h-48 whitespace-pre-wrap break-words text-slate-300 font-mono leading-relaxed">
+            <pre className="text-xs bg-slate-950 border border-slate-800 rounded p-2 overflow-x-auto max-h-64 whitespace-pre-wrap break-words text-slate-300 font-mono leading-relaxed">
               {log}
             </pre>
           ) : (
