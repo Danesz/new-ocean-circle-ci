@@ -10,6 +10,11 @@ import type {
   LogOutput,
   User,
   Project,
+  WorkflowMetrics,
+  WorkflowRun,
+  FlakyTestsResponse,
+  TestMetricsResponse,
+  JobMetrics,
 } from '../types/circleci';
 
 export class CircleCIClient {
@@ -159,6 +164,66 @@ export class CircleCIClient {
       throw new Error(`API error ${res.status}: ${body || res.statusText}`);
     }
     return res.json();
+  }
+
+  /** Get workflow summary metrics from Insights API */
+  async getWorkflowInsights(
+    projectSlug: string,
+    reportingWindow = 'last-30-days',
+    branch?: string,
+  ): Promise<PaginatedResponse<WorkflowMetrics>> {
+    return this.request<PaginatedResponse<WorkflowMetrics>>(
+      `/insights/${projectSlug}/workflows`,
+      {
+        'reporting-window': reportingWindow,
+        'all-branches': branch ? '' : 'true',
+        ...(branch ? { branch } : {}),
+      },
+    );
+  }
+
+  /** Get individual workflow runs for trend data */
+  async getWorkflowRuns(
+    projectSlug: string,
+    workflowName: string,
+    branch?: string,
+  ): Promise<PaginatedResponse<WorkflowRun>> {
+    return this.request<PaginatedResponse<WorkflowRun>>(
+      `/insights/${projectSlug}/workflows/${encodeURIComponent(workflowName)}`,
+      {
+        'all-branches': branch ? '' : 'true',
+        ...(branch ? { branch } : {}),
+      },
+    );
+  }
+
+  /** Get flaky tests for a project */
+  async getFlakyTests(projectSlug: string): Promise<FlakyTestsResponse> {
+    return this.request<FlakyTestsResponse>(
+      `/insights/${projectSlug}/flaky-tests`,
+    );
+  }
+
+  /** Get test metrics for a workflow */
+  async getTestMetrics(
+    projectSlug: string,
+    workflowName: string,
+  ): Promise<TestMetricsResponse> {
+    return this.request<TestMetricsResponse>(
+      `/insights/${projectSlug}/workflows/${encodeURIComponent(workflowName)}/test-metrics`,
+    );
+  }
+
+  /** Get job metrics within a workflow */
+  async getJobInsights(
+    projectSlug: string,
+    workflowName: string,
+    reportingWindow = 'last-30-days',
+  ): Promise<PaginatedResponse<JobMetrics>> {
+    return this.request<PaginatedResponse<JobMetrics>>(
+      `/insights/${projectSlug}/workflows/${encodeURIComponent(workflowName)}/jobs`,
+      { 'reporting-window': reportingWindow },
+    );
   }
 
   /** Fetch log output from a step action's output_url via server proxy (avoids CORS) */

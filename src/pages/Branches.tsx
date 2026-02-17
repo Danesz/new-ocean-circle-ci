@@ -17,12 +17,23 @@ export function Branches() {
     <div className="max-w-4xl mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-slate-100">Branches</h2>
-        <button
-          onClick={refetch}
-          className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/insights"
+            className="text-sm text-ocean-400 hover:text-ocean-300 transition-colors flex items-center gap-1.5"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+              <path d="M1 11a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3Zm5-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7Zm5-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2Z" />
+            </svg>
+            Insights
+          </Link>
+          <button
+            onClick={refetch}
+            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {loading && !data ? (

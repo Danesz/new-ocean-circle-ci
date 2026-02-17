@@ -6,6 +6,7 @@ import { Branches } from './pages/Branches';
 import { Pipelines } from './pages/Pipelines';
 import { Triggers } from './pages/Triggers';
 import { WorkflowDetail } from './pages/WorkflowDetail';
+import { Insights } from './pages/Insights';
 
 function AppRoutes() {
   const { token, projectSlug } = useAuth();
@@ -40,6 +41,18 @@ function AppRoutes() {
           isAuthenticated ? (
             <Layout>
               <Pipelines />
+            </Layout>
+          ) : (
+            <Navigate to="/setup" replace />
+          )
+        }
+      />
+      <Route
+        path="/insights"
+        element={
+          isAuthenticated ? (
+            <Layout>
+              <Insights />
             </Layout>
           ) : (
             <Navigate to="/setup" replace />

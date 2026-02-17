@@ -10,6 +10,11 @@ import type {
   BuildDetailV1,
   BranchSummary,
   WorkflowStatus,
+  WorkflowMetrics,
+  WorkflowRun,
+  FlakyTestsResponse,
+  TestMetricsResponse,
+  JobMetrics,
 } from '../types/circleci';
 import { isActiveStatus } from '../components/StatusBadge';
 
@@ -286,6 +291,78 @@ export function useBuildSteps(jobNumber: number | null) {
   return useAsyncData(
     client && projectSlug && jobNumber ? fetcher : null,
     [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch workflow insights (summary metrics) */
+export function useWorkflowInsights(reportingWindow = 'last-30-days') {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<WorkflowMetrics[]> => {
+    if (!client || !projectSlug) throw new Error('Not authenticated');
+    const { items } = await client.getWorkflowInsights(projectSlug, reportingWindow);
+    return items;
+  }, [client, projectSlug, reportingWindow]);
+
+  return useAsyncData(client && projectSlug ? fetcher : null, [client, projectSlug, reportingWindow]);
+}
+
+/** Fetch individual workflow runs for trend chart */
+export function useWorkflowRuns(workflowName: string | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<WorkflowRun[]> => {
+    if (!client || !projectSlug || !workflowName) throw new Error('Missing params');
+    const { items } = await client.getWorkflowRuns(projectSlug, workflowName);
+    return items;
+  }, [client, projectSlug, workflowName]);
+
+  return useAsyncData(
+    client && projectSlug && workflowName ? fetcher : null,
+    [client, projectSlug, workflowName],
+  );
+}
+
+/** Fetch flaky tests */
+export function useFlakyTests() {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<FlakyTestsResponse> => {
+    if (!client || !projectSlug) throw new Error('Not authenticated');
+    return client.getFlakyTests(projectSlug);
+  }, [client, projectSlug]);
+
+  return useAsyncData(client && projectSlug ? fetcher : null, [client, projectSlug]);
+}
+
+/** Fetch test metrics for a workflow */
+export function useTestMetrics(workflowName: string | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<TestMetricsResponse> => {
+    if (!client || !projectSlug || !workflowName) throw new Error('Missing params');
+    return client.getTestMetrics(projectSlug, workflowName);
+  }, [client, projectSlug, workflowName]);
+
+  return useAsyncData(
+    client && projectSlug && workflowName ? fetcher : null,
+    [client, projectSlug, workflowName],
+  );
+}
+
+/** Fetch job metrics within a workflow */
+export function useJobInsights(workflowName: string | null, reportingWindow = 'last-30-days') {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<JobMetrics[]> => {
+    if (!client || !projectSlug || !workflowName) throw new Error('Missing params');
+    const { items } = await client.getJobInsights(projectSlug, workflowName, reportingWindow);
+    return items;
+  }, [client, projectSlug, workflowName, reportingWindow]);
+
+  return useAsyncData(
+    client && projectSlug && workflowName ? fetcher : null,
+    [client, projectSlug, workflowName, reportingWindow],
   );
 }
 
