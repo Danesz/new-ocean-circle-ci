@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useWorkflows, useJobs } from '../hooks/useCircleCI';
+import { useAuth } from '../context/AuthContext';
 import { PipelineGraph } from '../components/PipelineGraph';
 import { TimelineChart } from '../components/TimelineChart';
 import { JobPanel } from '../components/JobPanel';
-import { StatusBadge } from '../components/StatusBadge';
+import { StatusBadge, isActiveStatus } from '../components/StatusBadge';
 import { ErrorDisplay, Skeleton } from '../components/Layout';
 import { formatDurationBetween, formatRelativeTime } from '../utils/format';
 import type { Job } from '../types/circleci';
@@ -28,7 +29,10 @@ export function WorkflowDetail() {
     refetch,
   } = useJobs(workflowId!);
 
+  const { client } = useAuth();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleSelectJob = useCallback((job: Job) => {
     setSelectedJob((prev) => (prev?.id === job.id ? null : job));
@@ -37,6 +41,40 @@ export function WorkflowDetail() {
   const workflow = workflows?.find((w) => w.id === workflowId);
   const error = wfError || jobsError;
   const loading = wfLoading || jobsLoading;
+
+  const handleRerun = useCallback(async (fromFailed: boolean) => {
+    if (!client || !workflowId) return;
+    const label = fromFailed ? 'rerun-failed' : 'rerun';
+    setActionLoading(label);
+    setActionError(null);
+    try {
+      await client.rerunWorkflow(workflowId, { fromFailed });
+      // Refetch after a short delay to let CircleCI process
+      setTimeout(refetch, 1500);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Rerun failed');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [client, workflowId, refetch]);
+
+  const handleCancel = useCallback(async () => {
+    if (!client || !workflowId) return;
+    setActionLoading('cancel');
+    setActionError(null);
+    try {
+      await client.cancelWorkflow(workflowId);
+      setTimeout(refetch, 1500);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Cancel failed');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [client, workflowId, refetch]);
+
+  const isRunning = workflow && isActiveStatus(workflow.status);
+  const isFailed = workflow && (workflow.status === 'failed' || workflow.status === 'error');
+  const isTerminal = workflow && !isActiveStatus(workflow.status);
 
   if (error) {
     return <ErrorDisplay message={error} onRetry={refetch} />;
@@ -79,14 +117,54 @@ export function WorkflowDetail() {
           </div>
 
           {workflow && (
-            <div className="flex items-center gap-4 text-sm text-slate-500 ml-8">
-              <span>
-                Pipeline #{workflow.pipeline_number}
-              </span>
-              <span>
-                {formatDurationBetween(workflow.created_at, workflow.stopped_at)}
-              </span>
-              <span>{formatRelativeTime(workflow.created_at)}</span>
+            <div className="flex items-center justify-between ml-8">
+              <div className="flex items-center gap-4 text-sm text-slate-500">
+                <span>
+                  Pipeline #{workflow.pipeline_number}
+                </span>
+                <span>
+                  {formatDurationBetween(workflow.created_at, workflow.stopped_at)}
+                </span>
+                <span>{formatRelativeTime(workflow.created_at)}</span>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2">
+                {isRunning && (
+                  <ActionButton
+                    label="Cancel"
+                    loading={actionLoading === 'cancel'}
+                    disabled={!!actionLoading}
+                    variant="danger"
+                    onClick={handleCancel}
+                  />
+                )}
+                {isFailed && (
+                  <ActionButton
+                    label="Rerun Failed"
+                    loading={actionLoading === 'rerun-failed'}
+                    disabled={!!actionLoading}
+                    variant="primary"
+                    onClick={() => handleRerun(true)}
+                  />
+                )}
+                {isTerminal && (
+                  <ActionButton
+                    label="Rerun"
+                    loading={actionLoading === 'rerun'}
+                    disabled={!!actionLoading}
+                    variant="default"
+                    onClick={() => handleRerun(false)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Action error */}
+          {actionError && (
+            <div className="ml-8 mt-2 text-xs text-red-400 bg-red-950/30 border border-red-900/30 rounded px-3 py-1.5">
+              {actionError}
             </div>
           )}
         </div>
@@ -169,8 +247,53 @@ export function WorkflowDetail() {
 
       {/* Job detail panel (slides in from right) */}
       {selectedJob && (
-        <JobPanel job={selectedJob} onClose={() => setSelectedJob(null)} />
+        <JobPanel
+          job={selectedJob}
+          onClose={() => setSelectedJob(null)}
+          onAction={() => setTimeout(refetch, 1500)}
+        />
       )}
     </div>
+  );
+}
+
+/** Small action button with loading state */
+function ActionButton({
+  label,
+  loading,
+  disabled,
+  variant,
+  onClick,
+}: {
+  label: string;
+  loading: boolean;
+  disabled: boolean;
+  variant: 'primary' | 'danger' | 'default';
+  onClick: () => void;
+}) {
+  const colors = {
+    primary: 'bg-ocean-600 hover:bg-ocean-500 text-white',
+    danger: 'bg-red-900/50 hover:bg-red-900/70 text-red-300 border border-red-800/50',
+    default: 'bg-slate-800 hover:bg-slate-700 text-slate-300',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${colors[variant]}`}
+    >
+      {loading ? (
+        <span className="flex items-center gap-1.5">
+          <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+          </svg>
+          {label}...
+        </span>
+      ) : (
+        label
+      )}
+    </button>
   );
 }

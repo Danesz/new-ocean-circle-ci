@@ -58,6 +58,32 @@ export class CircleCIClient {
     return res.json();
   }
 
+  private async post<T>(
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    const url = new URL(`${this.baseUrl}${path}`, window.location.origin);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Circle-Token': this.token,
+        'Content-Type': 'application/json',
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`CircleCI API error ${res.status}: ${text || res.statusText}`);
+    }
+
+    const contentType = res.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      return res.json();
+    }
+    return {} as T;
+  }
+
   /** Validate token by fetching current user */
   async getMe(): Promise<User> {
     return this.request<User>('/me');
@@ -224,6 +250,45 @@ export class CircleCIClient {
       `/insights/${projectSlug}/workflows/${encodeURIComponent(workflowName)}/jobs`,
       { 'reporting-window': reportingWindow },
     );
+  }
+
+  // --- Action Endpoints ---
+
+  /** Rerun a workflow (all jobs or from failed) */
+  async rerunWorkflow(
+    workflowId: string,
+    options?: { fromFailed?: boolean; enableSsh?: boolean },
+  ): Promise<{ workflow_id: string }> {
+    return this.post<{ workflow_id: string }>(
+      `/workflow/${workflowId}/rerun`,
+      {
+        from_failed: options?.fromFailed ?? false,
+        enable_ssh: options?.enableSsh ?? false,
+      },
+    );
+  }
+
+  /** Cancel a running workflow */
+  async cancelWorkflow(workflowId: string): Promise<void> {
+    await this.post(`/workflow/${workflowId}/cancel`);
+  }
+
+  /** Approve a hold/approval job in a workflow */
+  async approveJob(
+    workflowId: string,
+    approvalRequestId: string,
+  ): Promise<void> {
+    await this.post(
+      `/workflow/${workflowId}/approve/${approvalRequestId}`,
+    );
+  }
+
+  /** Cancel a single running job */
+  async cancelJob(
+    projectSlug: string,
+    jobNumber: number,
+  ): Promise<void> {
+    await this.post(`/project/${projectSlug}/job/${jobNumber}/cancel`);
   }
 
   /** Fetch log output from a step action's output_url via server proxy (avoids CORS) */

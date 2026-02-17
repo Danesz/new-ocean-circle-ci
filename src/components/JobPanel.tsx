@@ -9,14 +9,18 @@ import { formatDuration, formatDurationBetween, formatRelativeTime } from '../ut
 interface Props {
   job: Job;
   onClose: () => void;
+  onAction?: () => void;
 }
 
-export function JobPanel({ job, onClose }: Props) {
+export function JobPanel({ job, onClose, onAction }: Props) {
   const jobNum = job.job_number ?? null;
+  const { client, projectSlug } = useAuth();
   const { data: detail, loading: detailLoading } = useJobDetail(jobNum);
   const { data: tests } = useJobTests(jobNum);
   const { data: artifacts } = useJobArtifacts(jobNum);
   const { data: buildDetail, error: stepsError, loading: stepsLoading } = useBuildSteps(jobNum);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const failedTests = tests?.filter((t) => t.result === 'failure') ?? [];
   const skippedTests = tests?.filter((t) => t.result === 'skipped') ?? [];
@@ -230,12 +234,93 @@ export function JobPanel({ job, onClose }: Props) {
           </a>
         )}
 
-        {/* Approval badge */}
-        {job.type === 'approval' && (
-          <div className="p-3 bg-amber-950/30 border border-amber-900/50 rounded-lg text-sm text-amber-300">
-            This is an approval job. It requires manual approval to continue the
-            workflow.
+        {/* Action error */}
+        {actionError && (
+          <div className="p-2.5 bg-red-950/30 border border-red-900/30 rounded-lg text-xs text-red-400">
+            {actionError}
           </div>
+        )}
+
+        {/* Approval gate */}
+        {job.type === 'approval' && job.status === 'on_hold' && job.approval_request_id && (
+          <div className="p-3 bg-amber-950/30 border border-amber-900/50 rounded-lg space-y-2.5">
+            <p className="text-sm text-amber-300">
+              This job is waiting for manual approval to continue.
+            </p>
+            <button
+              onClick={async () => {
+                if (!client || !job.approval_request_id) return;
+                setActionLoading(true);
+                setActionError(null);
+                try {
+                  // Get the workflow ID from the detail endpoint
+                  const wfId = detail?.latest_workflow?.id;
+                  if (!wfId) throw new Error('Cannot determine workflow ID');
+                  await client.approveJob(wfId, job.approval_request_id);
+                  onAction?.();
+                } catch (err) {
+                  setActionError(err instanceof Error ? err.message : 'Approval failed');
+                } finally {
+                  setActionLoading(false);
+                }
+              }}
+              disabled={actionLoading}
+              className="w-full py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2"
+            >
+              {actionLoading ? (
+                <>
+                  <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+                  </svg>
+                  Approving...
+                </>
+              ) : (
+                'Approve'
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Approval already done */}
+        {job.type === 'approval' && job.status !== 'on_hold' && (
+          <div className="p-3 bg-amber-950/30 border border-amber-900/50 rounded-lg text-sm text-amber-300">
+            This is an approval gate.
+            {job.status === 'success' && ' It has been approved.'}
+          </div>
+        )}
+
+        {/* Cancel job button for running jobs */}
+        {job.type === 'build' && (job.status === 'running' || job.status === 'queued' || job.status === 'not_running') && jobNum && projectSlug && (
+          <button
+            onClick={async () => {
+              if (!client || !projectSlug || !jobNum) return;
+              setActionLoading(true);
+              setActionError(null);
+              try {
+                await client.cancelJob(projectSlug, jobNum);
+                onAction?.();
+              } catch (err) {
+                setActionError(err instanceof Error ? err.message : 'Cancel failed');
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+            disabled={actionLoading}
+            className="w-full py-2 bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 disabled:opacity-50 text-red-300 text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2"
+          >
+            {actionLoading ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                  <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+                </svg>
+                Canceling...
+              </>
+            ) : (
+              'Cancel Job'
+            )}
+          </button>
         )}
       </div>
     </div>
