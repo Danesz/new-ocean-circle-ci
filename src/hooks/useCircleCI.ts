@@ -75,6 +75,14 @@ export interface BranchesResult {
 /** Max pages of pipelines to fetch (each page ~20 items) */
 const MAX_PIPELINE_PAGES = 5;
 
+/** Non-push trigger types that should appear on the Triggers page */
+const TRIGGERED_TYPES = new Set(['api', 'schedule', 'scheduled_pipeline']);
+
+/** True when a pipeline was NOT triggered by a normal VCS push/PR */
+function isTriggeredPipeline(p: Pipeline): boolean {
+  return !!p.vcs.tag || TRIGGERED_TYPES.has(p.trigger.type);
+}
+
 /** Fetch branches (derived from recent pipelines), excluding branchless pipelines */
 export function useBranches() {
   const { client, projectSlug } = useAuth();
@@ -93,17 +101,18 @@ export function useBranches() {
       pageToken = result.next_page_token;
     }
 
-    // Separate branch pipelines from branchless (triggered) pipelines
+    // Separate regular branch pipelines from triggered (API, schedule, tag) pipelines
     // Track latest pipeline + count per branch
     const branchMap = new Map<string, Pipeline>();
     const branchCounts = new Map<string, number>();
     let triggeredCount = 0;
 
     for (const p of allPipelines) {
-      if (!p.vcs.branch) {
+      if (isTriggeredPipeline(p)) {
         triggeredCount++;
         continue;
       }
+      if (!p.vcs.branch) continue; // no branch and not triggered — skip
       branchCounts.set(p.vcs.branch, (branchCounts.get(p.vcs.branch) ?? 0) + 1);
       if (!branchMap.has(p.vcs.branch)) {
         branchMap.set(p.vcs.branch, p);
@@ -169,8 +178,8 @@ export function useTriggeredPipelines() {
 
     const { items: pipelines } = await client.getPipelines(projectSlug);
 
-    // Keep only branchless pipelines
-    const branchless = pipelines.filter((p) => !p.vcs.branch);
+    // Keep only triggered pipelines (API, schedule, tags — not regular pushes)
+    const branchless = pipelines.filter(isTriggeredPipeline);
 
     // Fetch workflow statuses in parallel
     const results: TriggeredPipeline[] = [];
