@@ -26,26 +26,17 @@ Reference of all CircleCI API endpoints relevant to this dashboard, what we use 
 | `GET /project/{slug}/{num}/artifacts` | Job artifacts | `getJobArtifacts()` | JobPanel artifact list |
 | v1.1 `GET /project/{slug}/{num}` | Build steps + log URLs | `getBuildSteps()` | JobPanel step list |
 | (S3 pre-signed URL) | Step log output | `getStepLog()` | JobPanel log viewer |
+| `GET /insights/{slug}/workflows` | Workflow summary metrics | `getWorkflowInsights()` | Insights health cards |
+| `GET /insights/{slug}/workflows/{name}` | Individual workflow runs | `getWorkflowRuns()` | Insights duration trend chart |
+| `GET /insights/{slug}/workflows/{name}/jobs` | Job metrics within workflow | `getJobInsights()` | Insights job breakdown |
+| `GET /insights/{slug}/flaky-tests` | Flaky test detection | `getFlakyTests()` | Insights flaky tests section |
+| `GET /insights/{slug}/workflows/{name}/test-metrics` | Test performance | `getTestMetrics()` | Insights test metrics |
 
 ---
 
 ## High Priority — Next to Implement
 
-### Insights API (Analytics)
-
-**`GET /insights/{slug}/workflows`** — Workflow summary metrics
-- Params: `reporting-window` (last-7-days, last-30-days, last-60-days, last-90-days), `all-branches`, `branch`
-- Returns per-workflow: `total_runs`, `successful_runs`, `failed_runs`, `throughput` (avg runs/day), `mttr` (mean time to recovery in seconds), `total_credits_used`, `duration_metrics` (min, max, mean, median, p95, standard_deviation)
-- Use: Workflow health cards, success rate charts, MTTR tracking, credit consumption
-
-**`GET /insights/{slug}/workflows/{name}`** — Individual workflow runs
-- Params: `all-branches`, `branch`, `start-date`, `end-date`, `page-token`
-- Returns run records (up to 90 days): `id`, `duration`, `status`, `created_at`, `stopped_at`, `credits_used`, `branch`, `is_approval`
-- Use: Duration trend charts, run history timeline, branch comparison
-
-**`GET /insights/{slug}/workflows/{name}/jobs`** — Job summary metrics within a workflow
-- Same structure as workflow summary but per-job
-- Use: Identifying bottleneck jobs, comparing job durations
+### Insights API (Not Yet Implemented)
 
 **`GET /insights/{slug}/workflows/{name}/jobs/{job-name}`** — Individual job runs
 - Returns per-run: `started_at`, `stopped_at`, `status`, `duration`, `credits_used`
@@ -55,14 +46,6 @@ Reference of all CircleCI API endpoints relevant to this dashboard, what we use 
 - Params: `branch`, `granularity` (hourly/daily), `start-date`, `end-date`
 - Hourly data retained 48h, daily retained 90 days
 - Use: Time-series charts, build frequency heatmaps
-
-**`GET /insights/{slug}/flaky-tests`** — Flaky test detection
-- Returns: `total_flaky_tests`, per-test: `time-wasted`, `workflow-name`, `test-name`, `job-name`, `times-flaked`, `classname`, `source`, `file`
-- Use: Flaky test dashboard, reliability scoring
-
-**`GET /insights/{slug}/workflows/{name}/test-metrics`** — Test performance
-- Returns: `most_failed_tests`, `slowest_tests` with `p95_duration`, `total_runs`, `failed_runs`, `flaky` flag
-- Use: Slowest/most-failed test leaderboards
 
 **`GET /insights/{org-slug}/summary`** — Org-level summary
 - Params: `reporting-window`, `project-names` (filter)
@@ -195,3 +178,4 @@ Reference of all CircleCI API endpoints relevant to this dashboard, what we use 
 - `src/types/circleci.ts` — TypeScript interfaces for all API responses
 - `src/hooks/useCircleCI.ts` — React hooks wrapping API calls with loading/error/polling
 - `src/context/AuthContext.tsx` — Token + project slug storage, client instantiation
+- `src/pages/Insights.tsx` — Insights page with workflow metrics, duration trends, flaky tests, test metrics
