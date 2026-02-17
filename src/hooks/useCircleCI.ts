@@ -94,7 +94,9 @@ export function useBranches() {
     }
 
     // Separate branch pipelines from branchless (triggered) pipelines
+    // Track latest pipeline + count per branch
     const branchMap = new Map<string, Pipeline>();
+    const branchCounts = new Map<string, number>();
     let triggeredCount = 0;
 
     for (const p of allPipelines) {
@@ -102,36 +104,14 @@ export function useBranches() {
         triggeredCount++;
         continue;
       }
+      branchCounts.set(p.vcs.branch, (branchCounts.get(p.vcs.branch) ?? 0) + 1);
       if (!branchMap.has(p.vcs.branch)) {
         branchMap.set(p.vcs.branch, p);
       }
     }
 
-    // Fetch workflow insights in parallel with workflow statuses
-    const entries = Array.from(branchMap.entries());
-
-    // Get insights data for all workflows (keyed by workflow name, scoped per branch)
-    let insightsMap = new Map<string, BranchSummary['insights']>();
-    try {
-      const { items: workflowMetrics } = await client.getWorkflowInsights(projectSlug, 'last-30-days');
-      // Build a lookup: since insights aren't per-branch, we store aggregate per-workflow
-      // We'll try to match the default workflow to each branch later
-      for (const wm of workflowMetrics) {
-        insightsMap.set(wm.name, {
-          successRate: wm.metrics.total_runs > 0
-            ? Math.round((wm.metrics.successful_runs / wm.metrics.total_runs) * 100)
-            : 0,
-          totalRuns: wm.metrics.total_runs,
-          medianDuration: wm.metrics.duration_metrics.median,
-          p95Duration: wm.metrics.duration_metrics.p95,
-          failedRuns: wm.metrics.failed_runs,
-        });
-      }
-    } catch {
-      // Insights may not be available for all projects; continue without
-    }
-
     // Fetch workflow status for each branch's latest pipeline
+    const entries = Array.from(branchMap.entries());
     const branches: BranchSummary[] = [];
     const batchSize = 6;
     for (let i = 0; i < entries.length; i += batchSize) {
@@ -141,12 +121,18 @@ export function useBranches() {
           try {
             const { items: workflows } = await client.getWorkflows(pipeline.id);
             const worstStatus = aggregateWorkflowStatus(workflows);
-            // Try to find insights for the first workflow name
-            const firstWorkflowName = workflows[0]?.name;
-            const insights = firstWorkflowName ? insightsMap.get(firstWorkflowName) : undefined;
-            return { name, latestPipeline: pipeline, latestWorkflowStatus: worstStatus, insights };
+            return {
+              name,
+              latestPipeline: pipeline,
+              latestWorkflowStatus: worstStatus,
+              recentPipelineCount: branchCounts.get(name) ?? 1,
+            };
           } catch {
-            return { name, latestPipeline: pipeline } as BranchSummary;
+            return {
+              name,
+              latestPipeline: pipeline,
+              recentPipelineCount: branchCounts.get(name) ?? 1,
+            } as BranchSummary;
           }
         }),
       );

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useBranches } from '../hooks/useCircleCI';
 import { StatusBadge, isActiveStatus } from '../components/StatusBadge';
 import { ErrorDisplay, EmptyState, Skeleton } from '../components/Layout';
-import { formatRelativeTime, formatDuration, truncate, shortSha } from '../utils/format';
+import { formatRelativeTime, truncate, shortSha } from '../utils/format';
 
 export function Branches() {
   const { data, loading, error, refetch } = useBranches();
@@ -87,6 +87,13 @@ export function Branches() {
                     <StatusBadge status={branch.latestWorkflowStatus} />
                   )}
 
+                  {/* Recent pipeline count */}
+                  {branch.recentPipelineCount > 1 && (
+                    <span className="text-xs text-slate-500">
+                      {branch.recentPipelineCount} recent
+                    </span>
+                  )}
+
                   <div className="flex-1" />
 
                   {/* Commit info */}
@@ -120,37 +127,13 @@ export function Branches() {
                   </svg>
                 </div>
 
-                {/* Insights metrics + mobile commit info */}
-                <div className="mt-2 flex items-center gap-3 flex-wrap">
-                  {branch.insights && (
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className={
-                        branch.insights.successRate >= 90 ? 'text-emerald-400' :
-                        branch.insights.successRate >= 70 ? 'text-amber-400' :
-                        'text-red-400'
-                      }>
-                        {branch.insights.successRate}% pass
-                      </span>
-                      <span className="text-slate-500">
-                        {branch.insights.totalRuns} runs
-                      </span>
-                      <span className="text-slate-500">
-                        ~{formatDuration(branch.insights.medianDuration * 1000)}
-                      </span>
-                      {branch.insights.failedRuns > 0 && (
-                        <span className="text-red-400/70">
-                          {branch.insights.failedRuns} failed
-                        </span>
-                      )}
-                    </div>
+                {/* Mobile commit info */}
+                <div className="sm:hidden mt-2 flex items-center gap-2 text-xs text-slate-500">
+                  {pipeline.vcs.commit?.subject && (
+                    <span className="truncate">
+                      {truncate(pipeline.vcs.commit.subject, 50)}
+                    </span>
                   )}
-                  <div className="sm:hidden flex items-center gap-2 text-xs text-slate-500">
-                    {pipeline.vcs.commit?.subject && (
-                      <span className="truncate">
-                        {truncate(pipeline.vcs.commit.subject, 50)}
-                      </span>
-                    )}
-                  </div>
                 </div>
               </Link>
             );
