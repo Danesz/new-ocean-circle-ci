@@ -16,7 +16,7 @@ export function JobPanel({ job, onClose }: Props) {
   const { data: detail, loading: detailLoading } = useJobDetail(jobNum);
   const { data: tests } = useJobTests(jobNum);
   const { data: artifacts } = useJobArtifacts(jobNum);
-  const { data: buildDetail } = useBuildSteps(jobNum);
+  const { data: buildDetail, error: stepsError, loading: stepsLoading } = useBuildSteps(jobNum);
 
   const failedTests = tests?.filter((t) => t.result === 'failure') ?? [];
   const skippedTests = tests?.filter((t) => t.result === 'skipped') ?? [];
@@ -167,6 +167,15 @@ export function JobPanel({ job, onClose }: Props) {
         )}
 
         {/* Steps with logs */}
+        {stepsLoading && steps.length === 0 && (
+          <Section title="Steps">
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-5/6" />
+            </div>
+          </Section>
+        )}
         {steps.length > 0 && (
           <Section title={`Steps (${steps.length})`}>
             <div className="space-y-1">
@@ -177,6 +186,22 @@ export function JobPanel({ job, onClose }: Props) {
                   defaultExpanded={i === autoExpandIndex}
                 />
               ))}
+            </div>
+          </Section>
+        )}
+        {!stepsLoading && stepsError && steps.length === 0 && detail?.web_url && (
+          <Section title="Steps">
+            <div className="p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg text-xs text-slate-400 space-y-2">
+              <p>Step logs are not available via the API for this project.</p>
+              <a
+                href={detail.web_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 transition-colors"
+              >
+                View step logs in CircleCI
+                <ExternalLinkIcon />
+              </a>
             </div>
           </Section>
         )}
