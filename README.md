@@ -1,6 +1,6 @@
 # Ocean CI
 
-A Blue Ocean-style pipeline visualizer for CircleCI. Browse branches, inspect workflows, view job logs, run actions, and track insights -- all from a fast, self-contained dashboard.
+An opinionated, Blue Ocean-style pipeline visualizer for CircleCI. It prioritizes a clean, branch-centric workflow over mirroring every screen in the CircleCI UI -- showing you what matters (branches, pipelines, job logs, insights) without the noise.
 
 ## Features
 
