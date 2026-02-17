@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { Setup } from './pages/Setup';
@@ -6,6 +6,7 @@ import { Branches } from './pages/Branches';
 import { Pipelines } from './pages/Pipelines';
 import { Triggers } from './pages/Triggers';
 import { WorkflowDetail } from './pages/WorkflowDetail';
+import { Insights } from './pages/Insights';
 
 function AppRoutes() {
   const { token, projectSlug } = useAuth();
@@ -40,6 +41,18 @@ function AppRoutes() {
           isAuthenticated ? (
             <Layout>
               <Pipelines />
+            </Layout>
+          ) : (
+            <Navigate to="/setup" replace />
+          )
+        }
+      />
+      <Route
+        path="/insights"
+        element={
+          isAuthenticated ? (
+            <Layout>
+              <Insights />
             </Layout>
           ) : (
             <Navigate to="/setup" replace />
@@ -84,10 +97,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

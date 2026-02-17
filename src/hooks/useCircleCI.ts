@@ -5,8 +5,16 @@ import type {
   Workflow,
   Job,
   JobDetail,
+  TestResult,
+  Artifact,
+  BuildDetailV1,
   BranchSummary,
   WorkflowStatus,
+  WorkflowMetrics,
+  WorkflowRun,
+  FlakyTestsResponse,
+  TestMetricsResponse,
+  JobMetrics,
 } from '../types/circleci';
 import { isActiveStatus } from '../components/StatusBadge';
 
@@ -64,6 +72,9 @@ export interface BranchesResult {
   triggeredCount: number;
 }
 
+/** Max pages of pipelines to fetch (each page ~20 items) */
+const MAX_PIPELINE_PAGES = 5;
+
 /** Fetch branches (derived from recent pipelines), excluding branchless pipelines */
 export function useBranches() {
   const { client, projectSlug } = useAuth();
@@ -71,27 +82,37 @@ export function useBranches() {
   const fetcher = useCallback(async (): Promise<BranchesResult> => {
     if (!client || !projectSlug) throw new Error('Not authenticated');
 
-    const { items: pipelines } = await client.getPipelines(projectSlug);
+    // Fetch multiple pages of pipelines for broader branch coverage
+    const allPipelines: Pipeline[] = [];
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < MAX_PIPELINE_PAGES; page++) {
+      const result = await client.getPipelines(projectSlug, undefined, pageToken);
+      allPipelines.push(...result.items);
+      if (!result.next_page_token || result.items.length === 0) break;
+      pageToken = result.next_page_token;
+    }
 
     // Separate branch pipelines from branchless (triggered) pipelines
+    // Track latest pipeline + count per branch
     const branchMap = new Map<string, Pipeline>();
+    const branchCounts = new Map<string, number>();
     let triggeredCount = 0;
 
-    for (const p of pipelines) {
+    for (const p of allPipelines) {
       if (!p.vcs.branch) {
         triggeredCount++;
         continue;
       }
+      branchCounts.set(p.vcs.branch, (branchCounts.get(p.vcs.branch) ?? 0) + 1);
       if (!branchMap.has(p.vcs.branch)) {
         branchMap.set(p.vcs.branch, p);
       }
     }
 
     // Fetch workflow status for each branch's latest pipeline
-    const branches: BranchSummary[] = [];
     const entries = Array.from(branchMap.entries());
-
-    // Fetch workflows in parallel (max 6 at a time to be kind to rate limits)
+    const branches: BranchSummary[] = [];
     const batchSize = 6;
     for (let i = 0; i < entries.length; i += batchSize) {
       const batch = entries.slice(i, i + batchSize);
@@ -100,9 +121,18 @@ export function useBranches() {
           try {
             const { items: workflows } = await client.getWorkflows(pipeline.id);
             const worstStatus = aggregateWorkflowStatus(workflows);
-            return { name, latestPipeline: pipeline, latestWorkflowStatus: worstStatus };
+            return {
+              name,
+              latestPipeline: pipeline,
+              latestWorkflowStatus: worstStatus,
+              recentPipelineCount: branchCounts.get(name) ?? 1,
+            };
           } catch {
-            return { name, latestPipeline: pipeline };
+            return {
+              name,
+              latestPipeline: pipeline,
+              recentPipelineCount: branchCounts.get(name) ?? 1,
+            } as BranchSummary;
           }
         }),
       );
@@ -236,6 +266,125 @@ export function useJobDetail(jobNumber: number | null) {
   return useAsyncData(
     client && projectSlug && jobNumber ? fetcher : null,
     [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch test results for a job */
+export function useJobTests(jobNumber: number | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<TestResult[]> => {
+    if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
+    const { items } = await client.getJobTests(projectSlug, jobNumber);
+    return items;
+  }, [client, projectSlug, jobNumber]);
+
+  return useAsyncData(
+    client && projectSlug && jobNumber ? fetcher : null,
+    [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch artifacts for a job */
+export function useJobArtifacts(jobNumber: number | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<Artifact[]> => {
+    if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
+    const { items } = await client.getJobArtifacts(projectSlug, jobNumber);
+    return items;
+  }, [client, projectSlug, jobNumber]);
+
+  return useAsyncData(
+    client && projectSlug && jobNumber ? fetcher : null,
+    [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch build steps from v1.1 API (includes log output URLs) */
+export function useBuildSteps(jobNumber: number | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<BuildDetailV1> => {
+    if (!client || !projectSlug || !jobNumber) throw new Error('Missing params');
+    return client.getBuildSteps(projectSlug, jobNumber);
+  }, [client, projectSlug, jobNumber]);
+
+  return useAsyncData(
+    client && projectSlug && jobNumber ? fetcher : null,
+    [client, projectSlug, jobNumber],
+  );
+}
+
+/** Fetch workflow insights (summary metrics) */
+export function useWorkflowInsights(reportingWindow = 'last-30-days') {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<WorkflowMetrics[]> => {
+    if (!client || !projectSlug) throw new Error('Not authenticated');
+    const { items } = await client.getWorkflowInsights(projectSlug, reportingWindow);
+    return items;
+  }, [client, projectSlug, reportingWindow]);
+
+  return useAsyncData(client && projectSlug ? fetcher : null, [client, projectSlug, reportingWindow]);
+}
+
+/** Fetch individual workflow runs for trend chart */
+export function useWorkflowRuns(workflowName: string | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<WorkflowRun[]> => {
+    if (!client || !projectSlug || !workflowName) throw new Error('Missing params');
+    const { items } = await client.getWorkflowRuns(projectSlug, workflowName);
+    return items;
+  }, [client, projectSlug, workflowName]);
+
+  return useAsyncData(
+    client && projectSlug && workflowName ? fetcher : null,
+    [client, projectSlug, workflowName],
+  );
+}
+
+/** Fetch flaky tests */
+export function useFlakyTests() {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<FlakyTestsResponse> => {
+    if (!client || !projectSlug) throw new Error('Not authenticated');
+    return client.getFlakyTests(projectSlug);
+  }, [client, projectSlug]);
+
+  return useAsyncData(client && projectSlug ? fetcher : null, [client, projectSlug]);
+}
+
+/** Fetch test metrics for a workflow */
+export function useTestMetrics(workflowName: string | null) {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<TestMetricsResponse> => {
+    if (!client || !projectSlug || !workflowName) throw new Error('Missing params');
+    return client.getTestMetrics(projectSlug, workflowName);
+  }, [client, projectSlug, workflowName]);
+
+  return useAsyncData(
+    client && projectSlug && workflowName ? fetcher : null,
+    [client, projectSlug, workflowName],
+  );
+}
+
+/** Fetch job metrics within a workflow */
+export function useJobInsights(workflowName: string | null, reportingWindow = 'last-30-days') {
+  const { client, projectSlug } = useAuth();
+
+  const fetcher = useCallback(async (): Promise<JobMetrics[]> => {
+    if (!client || !projectSlug || !workflowName) throw new Error('Missing params');
+    const { items } = await client.getJobInsights(projectSlug, workflowName, reportingWindow);
+    return items;
+  }, [client, projectSlug, workflowName, reportingWindow]);
+
+  return useAsyncData(
+    client && projectSlug && workflowName ? fetcher : null,
+    [client, projectSlug, workflowName, reportingWindow],
   );
 }
 

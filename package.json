@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:static": "VITE_STATIC=true npm run build",
     "preview": "vite preview",
-    "serve": "node server.js"
+    "serve": "npm run build && node server.js"
   },
   "dependencies": {
     "react": "^18.3.1",
