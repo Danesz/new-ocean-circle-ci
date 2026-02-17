@@ -31,6 +31,10 @@ Reference of all CircleCI API endpoints relevant to this dashboard, what we use 
 | `GET /insights/{slug}/workflows/{name}/jobs` | Job metrics within workflow | `getJobInsights()` | Insights job breakdown |
 | `GET /insights/{slug}/flaky-tests` | Flaky test detection | `getFlakyTests()` | Insights flaky tests section |
 | `GET /insights/{slug}/workflows/{name}/test-metrics` | Test performance | `getTestMetrics()` | Insights test metrics |
+| `POST /workflow/{id}/rerun` | Rerun a workflow | `rerunWorkflow()` | WorkflowDetail actions |
+| `POST /workflow/{id}/cancel` | Cancel running workflow | `cancelWorkflow()` | WorkflowDetail actions |
+| `POST /workflow/{id}/approve/{id}` | Approve hold gate | `approveJob()` | JobPanel approve button |
+| `POST /project/{slug}/job/{num}/cancel` | Cancel a job | `cancelJob()` | JobPanel cancel button |
 
 ---
 
@@ -55,22 +59,6 @@ Reference of all CircleCI API endpoints relevant to this dashboard, what we use 
 **`GET /insights/{slug}/branches`** — Branches with insights data
 - Returns up to 5,000 branches
 - Use: Better branch list than deriving from pipeline data
-
-### Action Endpoints (Make it Interactive)
-
-**`POST /workflow/{id}/rerun`** — Rerun a workflow
-- Body: `{ enable_ssh, from_failed, jobs[], sparse_tree }`
-- Use: "Rerun" and "Rerun from Failed" buttons. Max 100 reruns per pipeline.
-
-**`POST /workflow/{id}/cancel`** — Cancel a running workflow
-- Use: "Cancel" button on running workflows
-
-**`POST /workflow/{id}/approve/{approval-request-id}`** — Approve a hold gate
-- The `approval_request_id` comes from the job list endpoint (`GET /workflow/{id}/job`)
-- Use: "Approve" button for manual approval gates (on_hold jobs)
-
-**`POST /project/{slug}/job/{num}/cancel`** — Cancel a single job
-- Use: "Cancel Job" button on individual running jobs
 
 ### Multi-Project Support
 
