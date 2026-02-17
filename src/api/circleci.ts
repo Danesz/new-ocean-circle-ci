@@ -18,12 +18,13 @@ import type {
 } from '../types/circleci';
 
 /**
- * Detect whether we're running in Vite dev mode (proxy available)
- * or a static production build (call CircleCI directly).
+ * API base URL selection:
+ * - Default: use proxy paths (/api/circleci) — works with both `vite dev` and `node server.js`
+ * - Static hosting (GitHub Pages): set VITE_STATIC=true at build time to call CircleCI directly
  */
-const IS_DEV = import.meta.env.DEV;
-const DEFAULT_BASE_V2 = IS_DEV ? '/api/circleci' : 'https://circleci.com/api/v2';
-const DEFAULT_BASE_V1 = IS_DEV ? '/api/circleci-v1' : 'https://circleci.com/api/v1.1';
+const USE_PROXY = !import.meta.env.VITE_STATIC;
+const DEFAULT_BASE_V2 = USE_PROXY ? '/api/circleci' : 'https://circleci.com/api/v2';
+const DEFAULT_BASE_V1 = USE_PROXY ? '/api/circleci-v1' : 'https://circleci.com/api/v1.1';
 
 export class CircleCIClient {
   private token: string;
@@ -310,19 +311,18 @@ export class CircleCIClient {
 
   /**
    * Fetch log output from a step action's output_url.
-   * In dev mode, uses the Vite server proxy to avoid CORS.
-   * In production (static hosting), attempts a direct fetch.
+   * When a proxy is available (dev server or server.js), routes through /api/step-log.
+   * On static hosting, attempts a direct fetch with CORS fallback.
    */
   async getStepLog(outputUrl: string): Promise<LogOutput[]> {
-    if (IS_DEV) {
-      // Use server-side proxy in dev (avoids CORS)
+    if (USE_PROXY) {
       const proxyUrl = `/api/step-log?url=${encodeURIComponent(outputUrl)}`;
       const res = await fetch(proxyUrl);
       if (!res.ok) throw new Error(`Failed to fetch log: ${res.status}`);
       return res.json();
     }
 
-    // Production: try direct fetch (may fail due to CORS on S3 URLs)
+    // Static hosting: try direct fetch (may fail due to CORS on S3 URLs)
     try {
       const res = await fetch(outputUrl);
       if (!res.ok) throw new Error(`Failed to fetch log: ${res.status}`);
