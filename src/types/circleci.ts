@@ -196,6 +196,14 @@ export interface BranchSummary {
   name: string;
   latestPipeline: Pipeline;
   latestWorkflowStatus?: WorkflowStatus;
+  /** Insights: per-workflow metrics for this branch (if available) */
+  insights?: {
+    successRate: number;
+    totalRuns: number;
+    medianDuration: number;
+    p95Duration: number;
+    failedRuns: number;
+  };
 }
 
 /** Graph layout types */

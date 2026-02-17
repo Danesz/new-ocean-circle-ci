@@ -72,6 +72,9 @@ export interface BranchesResult {
   triggeredCount: number;
 }
 
+/** Max pages of pipelines to fetch (each page ~20 items) */
+const MAX_PIPELINE_PAGES = 5;
+
 /** Fetch branches (derived from recent pipelines), excluding branchless pipelines */
 export function useBranches() {
   const { client, projectSlug } = useAuth();
@@ -79,13 +82,22 @@ export function useBranches() {
   const fetcher = useCallback(async (): Promise<BranchesResult> => {
     if (!client || !projectSlug) throw new Error('Not authenticated');
 
-    const { items: pipelines } = await client.getPipelines(projectSlug);
+    // Fetch multiple pages of pipelines for broader branch coverage
+    const allPipelines: Pipeline[] = [];
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < MAX_PIPELINE_PAGES; page++) {
+      const result = await client.getPipelines(projectSlug, undefined, pageToken);
+      allPipelines.push(...result.items);
+      if (!result.next_page_token || result.items.length === 0) break;
+      pageToken = result.next_page_token;
+    }
 
     // Separate branch pipelines from branchless (triggered) pipelines
     const branchMap = new Map<string, Pipeline>();
     let triggeredCount = 0;
 
-    for (const p of pipelines) {
+    for (const p of allPipelines) {
       if (!p.vcs.branch) {
         triggeredCount++;
         continue;
@@ -95,11 +107,32 @@ export function useBranches() {
       }
     }
 
-    // Fetch workflow status for each branch's latest pipeline
-    const branches: BranchSummary[] = [];
+    // Fetch workflow insights in parallel with workflow statuses
     const entries = Array.from(branchMap.entries());
 
-    // Fetch workflows in parallel (max 6 at a time to be kind to rate limits)
+    // Get insights data for all workflows (keyed by workflow name, scoped per branch)
+    let insightsMap = new Map<string, BranchSummary['insights']>();
+    try {
+      const { items: workflowMetrics } = await client.getWorkflowInsights(projectSlug, 'last-30-days');
+      // Build a lookup: since insights aren't per-branch, we store aggregate per-workflow
+      // We'll try to match the default workflow to each branch later
+      for (const wm of workflowMetrics) {
+        insightsMap.set(wm.name, {
+          successRate: wm.metrics.total_runs > 0
+            ? Math.round((wm.metrics.successful_runs / wm.metrics.total_runs) * 100)
+            : 0,
+          totalRuns: wm.metrics.total_runs,
+          medianDuration: wm.metrics.duration_metrics.median,
+          p95Duration: wm.metrics.duration_metrics.p95,
+          failedRuns: wm.metrics.failed_runs,
+        });
+      }
+    } catch {
+      // Insights may not be available for all projects; continue without
+    }
+
+    // Fetch workflow status for each branch's latest pipeline
+    const branches: BranchSummary[] = [];
     const batchSize = 6;
     for (let i = 0; i < entries.length; i += batchSize) {
       const batch = entries.slice(i, i + batchSize);
@@ -108,9 +141,12 @@ export function useBranches() {
           try {
             const { items: workflows } = await client.getWorkflows(pipeline.id);
             const worstStatus = aggregateWorkflowStatus(workflows);
-            return { name, latestPipeline: pipeline, latestWorkflowStatus: worstStatus };
+            // Try to find insights for the first workflow name
+            const firstWorkflowName = workflows[0]?.name;
+            const insights = firstWorkflowName ? insightsMap.get(firstWorkflowName) : undefined;
+            return { name, latestPipeline: pipeline, latestWorkflowStatus: worstStatus, insights };
           } catch {
-            return { name, latestPipeline: pipeline };
+            return { name, latestPipeline: pipeline } as BranchSummary;
           }
         }),
       );
