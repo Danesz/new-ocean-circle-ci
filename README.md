@@ -2,6 +2,8 @@
 
 An opinionated, Blue Ocean-style pipeline visualizer for CircleCI. It prioritizes a clean, branch-centric workflow over mirroring every screen in the CircleCI UI -- showing you what matters (branches, pipelines, job logs, insights) without the noise.
 
+This entire project was built by [Claude Code](https://docs.anthropic.com/en/docs/claude-code) Web Research Preview as an experiment.
+
 ## Features
 
 - **Branch overview** -- see every branch with its latest pipeline status at a glance
