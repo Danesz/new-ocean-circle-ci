@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:static": "VITE_STATIC=true npm run build",
     "preview": "vite preview",
     "serve": "npm run build && node server.js"
   },

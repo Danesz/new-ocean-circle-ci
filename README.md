@@ -103,7 +103,7 @@ npx netlify-cli deploy --prod --dir=dist
 | `public/_redirects` | Proxies `/api/circleci/*` and `/api/circleci-v1/*` to CircleCI through Netlify's edge |
 | `netlify/functions/step-log.ts` | Netlify Function that proxies step log S3 URLs (CORS workaround) |
 
-> **Note:** Pure static hosts like GitHub Pages won't work because CircleCI's API doesn't support CORS. Netlify's edge proxy solves this transparently.
+> **Note:** Pure static hosts won't work because CircleCI's API doesn't support CORS. Netlify's edge proxy solves this transparently.
 
 ## NPM scripts
 
@@ -111,7 +111,6 @@ npx netlify-cli deploy --prod --dir=dist
 |---|---|
 | `npm run dev` | Vite dev server with API proxy (port 5173) |
 | `npm run build` | Production build (proxy mode, for `server.js` or Netlify) |
-| `npm run build:static` | Production build (direct API, requires CORS proxy) |
 | `npm run serve` | Build + start production server (port 3000) |
 | `npm run preview` | Preview production build via Vite |
 
