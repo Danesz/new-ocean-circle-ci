@@ -42,7 +42,7 @@ function stepLogProxy(): Plugin {
 }
 
 export default defineConfig({
-  base: '/new-ocean-circle-ci/',
+  base: './',
   plugins: [react(), stepLogProxy()],
   server: {
     proxy: {
