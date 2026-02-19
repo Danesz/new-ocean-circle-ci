@@ -63,35 +63,44 @@ npm ci && npm run build
 PORT=8080 node server.js
 ```
 
-### Option B: Static hosting (GitHub Pages, Netlify, Cloudflare Pages)
+### Option B: Netlify (recommended for free hosting)
 
-For free static hosting, the app calls CircleCI's API directly from the browser. No server needed.
+Netlify's edge proxies API requests server-side, so there are no CORS issues -- all features work, including step logs.
 
 ```bash
-npm run build:static
+npm run build
 ```
 
-This sets `VITE_STATIC=true`, which makes the client use `https://circleci.com/api/v2` directly instead of proxy paths. Deploy the `dist/` folder to any static host.
+Deploy the `dist/` folder to Netlify. The included `_redirects` file and Netlify Function handle the API proxying automatically.
 
-**GitHub Pages (automated):**
+**Netlify Drop (quickest):**
 
-1. Push to a GitHub repo
-2. Go to **Settings > Pages > Source** and select **GitHub Actions**
-3. Push to `main` -- the included workflow (`.github/workflows/deploy.yml`) builds and deploys automatically
-4. Your app is live at `https://<user>.github.io/<repo>/`
+1. Run `npm run build`
+2. Drag the `dist/` folder onto [app.netlify.com/drop](https://app.netlify.com/drop)
+3. Done -- your app is live
 
-**Limitations on static hosting:**
+**Netlify CLI:**
 
-- Step log viewing may not work (CircleCI's S3 log URLs don't send CORS headers). The app shows a "View in CircleCI" link as fallback.
-- All other features (pipelines, workflows, jobs, tests, artifacts, actions) work fine.
+```bash
+npx netlify-cli deploy --prod --dir=dist
+```
+
+**How it works:**
+
+| File | Purpose |
+|---|---|
+| `public/_redirects` | Proxies `/api/circleci/*` and `/api/circleci-v1/*` to CircleCI through Netlify's edge |
+| `netlify/functions/step-log.ts` | Netlify Function that proxies step log S3 URLs (CORS workaround) |
+
+> **Note:** Pure static hosts like GitHub Pages won't work because CircleCI's API doesn't support CORS. Netlify's edge proxy solves this transparently.
 
 ## NPM scripts
 
 | Script | Description |
 |---|---|
 | `npm run dev` | Vite dev server with API proxy (port 5173) |
-| `npm run build` | Production build (proxy mode, for use with `server.js`) |
-| `npm run build:static` | Production build (direct API, for static hosting) |
+| `npm run build` | Production build (proxy mode, for `server.js` or Netlify) |
+| `npm run build:static` | Production build (direct API, requires CORS proxy) |
 | `npm run serve` | Build + start production server (port 3000) |
 | `npm run preview` | Preview production build via Vite |
 

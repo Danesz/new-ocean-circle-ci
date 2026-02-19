@@ -1,0 +1,6 @@
+# Proxy CircleCI API requests through Netlify's edge (avoids CORS)
+/api/circleci/*    https://circleci.com/api/v2/:splat    200
+/api/circleci-v1/* https://circleci.com/api/v1.1/:splat  200
+
+# SPA fallback
+/*    /index.html   200
