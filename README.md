@@ -13,6 +13,17 @@ An opinionated, Blue Ocean-style pipeline visualizer for CircleCI. It prioritize
 - **Triggers view** -- API-triggered, scheduled, and tag-based pipelines
 - **Auto-refresh** -- running workflows poll every 10 seconds
 
+## Live demo
+
+Try it out without installing anything:
+
+- https://subtle-lebkuchen-44887c.netlify.app
+- https://cool-gumption-81e7d8.netlify.app
+
+**Password:** `My-Drop-Site`
+
+> These are temporary Netlify Drop sites and expire after 1 hour. To keep a deployment online permanently, [create a free Netlify account](https://app.netlify.com/signup).
+
 ## Prerequisites
 
 - **Node.js 20+**
