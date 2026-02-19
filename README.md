@@ -22,7 +22,7 @@ Try it out without installing anything:
 
 **Password:** `My-Drop-Site`
 
-> These are temporary Netlify Drop sites and expire after 1 hour. To keep a deployment online permanently, [create a free Netlify account](https://app.netlify.com/signup).
+> These are temporary Netlify Drop sites and expire after a while. Then just run `npm run build` and drop the `dist` folder on [Netlify Drop](https://app.netlify.com/drop).
 
 ## Prerequisites
 
