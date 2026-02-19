@@ -20,7 +20,7 @@ import type {
 /**
  * API base URL selection:
  * - Default: use proxy paths (/api/circleci) — works with both `vite dev` and `node server.js`
- * - Static hosting (GitHub Pages): set VITE_STATIC=true at build time to call CircleCI directly
+ * - Direct mode: set VITE_STATIC=true at build time to call CircleCI directly (requires own CORS solution)
  */
 const USE_PROXY = !import.meta.env.VITE_STATIC;
 const DEFAULT_BASE_V2 = USE_PROXY ? '/api/circleci' : 'https://circleci.com/api/v2';
