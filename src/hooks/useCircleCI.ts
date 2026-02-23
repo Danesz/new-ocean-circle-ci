@@ -176,10 +176,19 @@ export function useTriggeredPipelines() {
   const fetcher = useCallback(async (): Promise<TriggeredPipeline[]> => {
     if (!client || !projectSlug) throw new Error('Not authenticated');
 
-    const { items: pipelines } = await client.getPipelines(projectSlug);
+    // Fetch multiple pages for broader coverage (same as useBranches)
+    const allPipelines: Pipeline[] = [];
+    let pageToken: string | undefined;
 
-    // Keep only triggered pipelines (API, schedule, tags — not regular pushes)
-    const branchless = pipelines.filter(isTriggeredPipeline);
+    for (let page = 0; page < MAX_PIPELINE_PAGES; page++) {
+      const result = await client.getPipelines(projectSlug, undefined, pageToken);
+      allPipelines.push(...result.items);
+      if (!result.next_page_token) break;
+      pageToken = result.next_page_token;
+    }
+
+    // Keep only triggered pipelines (API, schedule, tags, no branch — not regular pushes)
+    const branchless = allPipelines.filter(isTriggeredPipeline);
 
     // Fetch workflow statuses in parallel
     const results: TriggeredPipeline[] = [];
