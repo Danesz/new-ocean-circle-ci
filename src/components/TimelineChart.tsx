@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Job } from '../types/circleci';
 import { getStatusFill } from './StatusBadge';
 import { formatDuration } from '../utils/format';
@@ -15,15 +15,42 @@ const LABEL_WIDTH = 140;
 const CHART_PADDING = 16;
 
 export function TimelineChart({ jobs, selectedJobId, onSelectJob }: Props) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   const { bars, totalDurationMs, chartWidth } = useMemo(
     () => computeTimeline(jobs),
     [jobs],
   );
 
+  // Calculate highlighted path (all ancestors of hovered/selected job)
+  const highlightedPath = useMemo(() => {
+    const targetId = hoveredId || selectedJobId;
+    if (!targetId) return new Set<string>();
+
+    const jobMap = new Map(jobs.map(j => [j.id, j]));
+    const highlighted = new Set<string>();
+
+    function addAncestors(jobId: string) {
+      if (highlighted.has(jobId)) return;
+      highlighted.add(jobId);
+
+      const job = jobMap.get(jobId);
+      if (!job) return;
+
+      for (const depId of job.dependencies) {
+        addAncestors(depId);
+      }
+    }
+
+    addAncestors(targetId);
+    return highlighted;
+  }, [hoveredId, selectedJobId, jobs]);
+
   if (bars.length === 0) {
     return null;
   }
 
+  const hasHighlight = hoveredId !== null || selectedJobId !== null;
   const svgHeight = CHART_PADDING * 2 + bars.length * ROW_HEIGHT;
   const svgWidth = LABEL_WIDTH + chartWidth + CHART_PADDING * 2;
 
@@ -63,21 +90,28 @@ export function TimelineChart({ jobs, selectedJobId, onSelectJob }: Props) {
         {bars.map((bar, i) => {
           const y = CHART_PADDING + i * ROW_HEIGHT;
           const isSelected = selectedJobId === bar.job.id;
+          const isHovered = hoveredId === bar.job.id;
+          const isHighlighted = highlightedPath.has(bar.job.id);
+          const isDimmed = hasHighlight && !isHighlighted;
 
           return (
             <g
               key={bar.job.id}
               className="cursor-pointer"
               onClick={() => onSelectJob(bar.job)}
+              onMouseEnter={() => setHoveredId(bar.job.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              opacity={isDimmed ? 0.3 : 1}
+              style={{ transition: 'opacity 0.15s ease' }}
             >
               {/* Row highlight */}
-              {isSelected && (
+              {(isSelected || isHovered) && (
                 <rect
                   x={0}
                   y={y - 2}
                   width={svgWidth}
                   height={ROW_HEIGHT}
-                  fill="#1e293b"
+                  fill={isSelected ? '#1e293b' : '#1e293b80'}
                   rx={4}
                 />
               )}
@@ -87,7 +121,7 @@ export function TimelineChart({ jobs, selectedJobId, onSelectJob }: Props) {
                 x={LABEL_WIDTH - 8}
                 y={y + BAR_HEIGHT / 2 + 2}
                 textAnchor="end"
-                fill={isSelected ? '#e2e8f0' : '#94a3b8'}
+                fill={isSelected || isHighlighted ? '#e2e8f0' : '#94a3b8'}
                 fontSize="11"
                 className="select-none"
               >
@@ -102,7 +136,9 @@ export function TimelineChart({ jobs, selectedJobId, onSelectJob }: Props) {
                 height={BAR_HEIGHT}
                 rx={4}
                 fill={getStatusFill(bar.job.status)}
-                opacity={isSelected ? 1 : 0.75}
+                opacity={isSelected || isHighlighted ? 1 : 0.75}
+                stroke={isHighlighted && !isSelected ? '#38bdf8' : 'none'}
+                strokeWidth={2}
               />
 
               {/* Duration text inside bar */}
@@ -159,7 +195,7 @@ function computeTimeline(jobs: Job[]): {
   // Chart width: target ~500px, min 200px
   const chartWidth = Math.max(200, Math.min(600, totalDurationMs / 100));
 
-  // Sort by start time
+  // Sort by start time (chronological order)
   const sorted = [...timedJobs].sort(
     (a, b) => new Date(a.started_at!).getTime() - new Date(b.started_at!).getTime(),
   );
