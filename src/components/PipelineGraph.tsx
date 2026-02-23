@@ -23,6 +23,33 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
     [jobs],
   );
 
+  // Calculate highlighted path (all ancestors of hovered node)
+  const highlightedPath = useMemo(() => {
+    if (!hoveredId) return { nodes: new Set<string>(), edges: new Set<string>() };
+
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const highlightedNodes = new Set<string>();
+    const highlightedEdges = new Set<string>();
+
+    // Recursively find all ancestors
+    function addAncestors(nodeId: string) {
+      if (highlightedNodes.has(nodeId)) return;
+      highlightedNodes.add(nodeId);
+
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+
+      for (const depId of node.dependencies) {
+        highlightedEdges.add(`${depId}-${nodeId}`);
+        addAncestors(depId);
+      }
+    }
+
+    addAncestors(hoveredId);
+
+    return { nodes: highlightedNodes, edges: highlightedEdges };
+  }, [hoveredId, nodes]);
+
   if (jobs.length === 0) {
     return (
       <div className="flex items-center justify-center py-12 text-slate-500">
@@ -30,6 +57,8 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
       </div>
     );
   }
+
+  const hasHighlight = hoveredId !== null;
 
   return (
     <div className="overflow-x-auto">
@@ -41,31 +70,42 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
         style={{ minWidth: Math.min(width, 400) }}
       >
         {/* Edges first (behind nodes) */}
-        {edges.map((edge) => (
-          <Edge
-            key={`${edge.from}-${edge.to}`}
-            edge={edge}
-            isActive={
-              isActiveStatus(edge.fromNode.status) ||
-              isActiveStatus(edge.toNode.status)
-            }
-          />
-        ))}
+        {edges.map((edge) => {
+          const edgeKey = `${edge.from}-${edge.to}`;
+          const isHighlighted = highlightedPath.edges.has(edgeKey);
+          return (
+            <Edge
+              key={edgeKey}
+              edge={edge}
+              isActive={
+                isActiveStatus(edge.fromNode.status) ||
+                isActiveStatus(edge.toNode.status)
+              }
+              isHighlighted={isHighlighted}
+              isDimmed={hasHighlight && !isHighlighted}
+            />
+          );
+        })}
 
         {/* Nodes */}
-        {nodes.map((node) => (
-          <JobNode
-            key={node.id}
-            node={node}
-            isSelected={selectedJobId === node.id}
-            isHovered={hoveredId === node.id}
-            onHover={setHoveredId}
-            onClick={() => {
-              const job = jobs.find((j) => j.id === node.id);
-              if (job) onSelectJob(job);
-            }}
-          />
-        ))}
+        {nodes.map((node) => {
+          const isHighlighted = highlightedPath.nodes.has(node.id);
+          return (
+            <JobNode
+              key={node.id}
+              node={node}
+              isSelected={selectedJobId === node.id}
+              isHovered={hoveredId === node.id}
+              isHighlighted={isHighlighted}
+              isDimmed={hasHighlight && !isHighlighted}
+              onHover={setHoveredId}
+              onClick={() => {
+                const job = jobs.find((j) => j.id === node.id);
+                if (job) onSelectJob(job);
+              }}
+            />
+          );
+        })}
       </svg>
     </div>
   );
@@ -76,12 +116,16 @@ function JobNode({
   node,
   isSelected,
   isHovered,
+  isHighlighted,
+  isDimmed,
   onHover,
   onClick,
 }: {
   node: GraphNode;
   isSelected: boolean;
   isHovered: boolean;
+  isHighlighted: boolean;
+  isDimmed: boolean;
   onHover: (id: string | null) => void;
   onClick: () => void;
 }) {
@@ -93,12 +137,31 @@ function JobNode({
   const boxX = node.x - NODE_WIDTH / 2;
   const boxY = node.y - NODE_HEIGHT / 2;
 
+  // Determine styling based on highlight state
+  const opacity = isDimmed ? 0.3 : 1;
+  const strokeColor = isSelected
+    ? '#3b82f6'
+    : isHighlighted
+    ? '#38bdf8'
+    : isHovered
+    ? '#475569'
+    : '#334155';
+  const fillColor = isSelected
+    ? '#1e3a5f'
+    : isHighlighted
+    ? '#0c4a6e'
+    : isHovered
+    ? '#1e293b'
+    : '#0f172a';
+
   return (
     <g
       className={`cursor-pointer ${isRunning ? 'node-running' : ''}`}
       onMouseEnter={() => onHover(node.id)}
       onMouseLeave={() => onHover(null)}
       onClick={onClick}
+      opacity={opacity}
+      style={{ transition: 'opacity 0.15s ease' }}
     >
       {/* Card background */}
       <rect
@@ -107,9 +170,9 @@ function JobNode({
         width={NODE_WIDTH}
         height={NODE_HEIGHT}
         rx={6}
-        fill={isSelected ? '#1e3a5f' : isHovered ? '#1e293b' : '#0f172a'}
-        stroke={isSelected ? '#3b82f6' : isHovered ? '#475569' : '#334155'}
-        strokeWidth={isSelected ? 2 : 1}
+        fill={fillColor}
+        stroke={strokeColor}
+        strokeWidth={isSelected || isHighlighted ? 2 : 1}
       />
 
       {/* Status indicator bar on left */}
@@ -170,16 +233,32 @@ function JobNode({
 }
 
 /** Edge with orthogonal routing */
-function Edge({ edge, isActive }: { edge: GraphEdge; isActive: boolean }) {
+function Edge({
+  edge,
+  isActive,
+  isHighlighted,
+  isDimmed,
+}: {
+  edge: GraphEdge;
+  isActive: boolean;
+  isHighlighted: boolean;
+  isDimmed: boolean;
+}) {
   const path = orthogonalPath(edge.fromNode, edge.toNode);
+
+  const strokeColor = isHighlighted ? '#38bdf8' : isActive ? '#38bdf8' : '#475569';
+  const strokeWidth = isHighlighted ? 3 : 2;
+  const opacity = isDimmed ? 0.15 : isHighlighted ? 1 : isActive ? 0.8 : 0.4;
+
   return (
     <path
       d={path}
       fill="none"
-      stroke={isActive ? '#38bdf8' : '#475569'}
-      strokeWidth={2}
-      className={isActive ? 'edge-animated' : ''}
-      opacity={isActive ? 0.8 : 0.4}
+      stroke={strokeColor}
+      strokeWidth={strokeWidth}
+      className={isActive && !isDimmed ? 'edge-animated' : ''}
+      opacity={opacity}
+      style={{ transition: 'opacity 0.15s ease' }}
     />
   );
 }
