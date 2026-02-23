@@ -23,29 +23,36 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
     [jobs],
   );
 
-  // Calculate highlighted path (all ancestors of hovered node)
+  // Calculate highlighted path (all ancestors of hovered node) with depth info
   const highlightedPath = useMemo(() => {
-    if (!hoveredId) return { nodes: new Set<string>(), edges: new Set<string>() };
+    if (!hoveredId) return {
+      nodes: new Map<string, number>(),
+      edges: new Set<string>()
+    };
 
     const nodeMap = new Map(nodes.map(n => [n.id, n]));
-    const highlightedNodes = new Set<string>();
-    const highlightedEdges = new Set<string>();
+    const highlightedNodes = new Map<string, number>(); // nodeId -> depth from hovered
+    const highlightedEdges = new Set<string>(); // edgeKey
 
-    // Recursively find all ancestors
-    function addAncestors(nodeId: string) {
-      if (highlightedNodes.has(nodeId)) return;
-      highlightedNodes.add(nodeId);
+    // BFS to find all ancestors with their depth
+    const queue: Array<{ nodeId: string; depth: number }> = [{ nodeId: hoveredId, depth: 0 }];
+
+    while (queue.length > 0) {
+      const { nodeId, depth } = queue.shift()!;
+
+      if (highlightedNodes.has(nodeId)) continue;
+      highlightedNodes.set(nodeId, depth);
 
       const node = nodeMap.get(nodeId);
-      if (!node) return;
+      if (!node) continue;
 
       for (const depId of node.dependencies) {
         highlightedEdges.add(`${depId}-${nodeId}`);
-        addAncestors(depId);
+        if (!highlightedNodes.has(depId)) {
+          queue.push({ nodeId: depId, depth: depth + 1 });
+        }
       }
     }
-
-    addAncestors(hoveredId);
 
     return { nodes: highlightedNodes, edges: highlightedEdges };
   }, [hoveredId, nodes]);
@@ -59,6 +66,33 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
   }
 
   const hasHighlight = hoveredId !== null;
+
+  // Calculate route offsets to spread overlapping vertical segments
+  const edgeRouteOffsets = useMemo(() => {
+    const offsets = new Map<string, number>();
+
+    // Group edges by their "channel" (source x -> target x pair)
+    const channels = new Map<string, GraphEdge[]>();
+    for (const edge of edges) {
+      const channelKey = `${Math.round(edge.fromNode.x)}-${Math.round(edge.toNode.x)}`;
+      if (!channels.has(channelKey)) channels.set(channelKey, []);
+      channels.get(channelKey)!.push(edge);
+    }
+
+    // Assign offsets within each channel
+    const spacing = 6; // pixels between parallel edges
+    for (const [, channelEdges] of channels) {
+      // Sort by target Y to keep edges from crossing each other
+      channelEdges.sort((a, b) => a.toNode.y - b.toNode.y);
+      const count = channelEdges.length;
+      channelEdges.forEach((edge, i) => {
+        const offset = (i - (count - 1) / 2) * spacing;
+        offsets.set(`${edge.from}-${edge.to}`, offset);
+      });
+    }
+
+    return offsets;
+  }, [edges]);
 
   return (
     <div className="overflow-x-auto">
@@ -83,13 +117,16 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
               }
               isHighlighted={isHighlighted}
               isDimmed={hasHighlight && !isHighlighted}
+              routeOffset={edgeRouteOffsets.get(edgeKey) ?? 0}
             />
           );
         })}
 
         {/* Nodes */}
         {nodes.map((node) => {
-          const isHighlighted = highlightedPath.nodes.has(node.id);
+          const highlightDepth = highlightedPath.nodes.get(node.id);
+          const isHighlighted = highlightDepth !== undefined;
+          const isDirect = highlightDepth === 0 || highlightDepth === 1; // Hovered or direct dep
           return (
             <JobNode
               key={node.id}
@@ -97,6 +134,7 @@ export function PipelineGraph({ jobs, selectedJobId, onSelectJob }: Props) {
               isSelected={selectedJobId === node.id}
               isHovered={hoveredId === node.id}
               isHighlighted={isHighlighted}
+              isDirect={isDirect}
               isDimmed={hasHighlight && !isHighlighted}
               onHover={setHoveredId}
               onClick={() => {
@@ -117,6 +155,7 @@ function JobNode({
   isSelected,
   isHovered,
   isHighlighted,
+  isDirect,
   isDimmed,
   onHover,
   onClick,
@@ -125,6 +164,7 @@ function JobNode({
   isSelected: boolean;
   isHovered: boolean;
   isHighlighted: boolean;
+  isDirect: boolean;
   isDimmed: boolean;
   onHover: (id: string | null) => void;
   onClick: () => void;
@@ -138,21 +178,24 @@ function JobNode({
   const boxY = node.y - NODE_HEIGHT / 2;
 
   // Determine styling based on highlight state
-  const opacity = isDimmed ? 0.3 : 1;
+  // Direct deps: full opacity, bright border
+  // Transitive deps: slightly faded, lighter border
+  const opacity = isDimmed ? 0.3 : isHighlighted && !isDirect ? 0.7 : 1;
   const strokeColor = isSelected
     ? '#3b82f6'
     : isHighlighted
-    ? '#38bdf8'
+    ? isDirect ? '#38bdf8' : '#0ea5e9'
     : isHovered
     ? '#475569'
     : '#334155';
   const fillColor = isSelected
     ? '#1e3a5f'
     : isHighlighted
-    ? '#0c4a6e'
+    ? isDirect ? '#0c4a6e' : '#0c4a6e'
     : isHovered
     ? '#1e293b'
     : '#0f172a';
+  const strokeDasharray = isHighlighted && !isDirect ? '4,2' : undefined;
 
   return (
     <g
@@ -172,7 +215,8 @@ function JobNode({
         rx={6}
         fill={fillColor}
         stroke={strokeColor}
-        strokeWidth={isSelected || isHighlighted ? 2 : 1}
+        strokeWidth={isSelected || (isHighlighted && isDirect) ? 2 : 1}
+        strokeDasharray={strokeDasharray}
       />
 
       {/* Status indicator bar on left */}
@@ -238,14 +282,17 @@ function Edge({
   isActive,
   isHighlighted,
   isDimmed,
+  routeOffset,
 }: {
   edge: GraphEdge;
   isActive: boolean;
   isHighlighted: boolean;
   isDimmed: boolean;
+  routeOffset: number;
 }) {
-  const path = orthogonalPath(edge.fromNode, edge.toNode);
+  const path = orthogonalPath(edge.fromNode, edge.toNode, routeOffset);
 
+  // All edges in the highlighted path are solid and bright
   const strokeColor = isHighlighted ? '#38bdf8' : isActive ? '#38bdf8' : '#475569';
   const strokeWidth = isHighlighted ? 3 : 2;
   const opacity = isDimmed ? 0.15 : isHighlighted ? 1 : isActive ? 0.8 : 0.4;
@@ -364,10 +411,41 @@ function layoutGraph(jobs: Job[]): {
     nodeMap.set(gn.id, gn);
   }
 
-  // Build edges
+  // Build edges with transitive reduction (remove redundant edges)
   const edges: GraphEdge[] = [];
   for (const node of nodes) {
-    for (const depId of node.dependencies) {
+    // Find which dependencies are redundant (reachable through other deps)
+    const directDeps = new Set(node.dependencies.filter(d => nodeMap.has(d)));
+    const redundantDeps = new Set<string>();
+
+    // For each dependency, check if it's reachable through another dependency
+    for (const depId of directDeps) {
+      const depNode = nodeMap.get(depId);
+      if (!depNode) continue;
+
+      // BFS to find all ancestors of this dependency
+      const visited = new Set<string>();
+      const queue = [...depNode.dependencies];
+      while (queue.length > 0) {
+        const ancestorId = queue.shift()!;
+        if (visited.has(ancestorId)) continue;
+        visited.add(ancestorId);
+
+        // If this ancestor is also a direct dependency, it's redundant
+        if (directDeps.has(ancestorId)) {
+          redundantDeps.add(ancestorId);
+        }
+
+        const ancestorNode = nodeMap.get(ancestorId);
+        if (ancestorNode) {
+          queue.push(...ancestorNode.dependencies);
+        }
+      }
+    }
+
+    // Only add non-redundant edges
+    for (const depId of directDeps) {
+      if (redundantDeps.has(depId)) continue;
       const fromNode = nodeMap.get(depId);
       if (fromNode) {
         edges.push({
@@ -390,14 +468,14 @@ function layoutGraph(jobs: Job[]): {
 }
 
 /** Create orthogonal (right-angle) path between nodes */
-function orthogonalPath(from: GraphNode, to: GraphNode): string {
+function orthogonalPath(from: GraphNode, to: GraphNode, routeOffset: number): string {
   const x1 = from.x + NODE_WIDTH / 2;
   const y1 = from.y;
   const x2 = to.x - NODE_WIDTH / 2;
   const y2 = to.y;
 
-  // Midpoint for the vertical segment
-  const midX = x1 + (x2 - x1) / 2;
+  // Spread vertical segments by offset to avoid overlap
+  const midX = x1 + (x2 - x1) / 2 + routeOffset;
 
   // Create path: horizontal -> vertical -> horizontal
   return `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`;
