@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { usePipelines } from '../hooks/useCircleCI';
 import { useAuth } from '../context/AuthContext';
-import { StatusBadge, isActiveStatus } from '../components/StatusBadge';
+import { StatusBadge, isActiveStatus, getStatusFill } from '../components/StatusBadge';
 import { ErrorDisplay, EmptyState, Skeleton } from '../components/Layout';
 import {
   formatRelativeTime,
   formatDurationBetween,
   shortSha,
   truncate,
+  formatDuration,
 } from '../utils/format';
 import { TriggerParams } from '../components/TriggerParams';
 import type { Pipeline, Workflow, WorkflowStatus } from '../types/circleci';
@@ -151,6 +152,10 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
         </div>
       ) : workflows.length > 0 ? (
         <div className="border-t border-slate-800">
+          {/* Mini timeline visualization */}
+          <MiniTimeline workflows={workflows} pipelineId={pipeline.id} />
+
+          {/* Workflow list */}
           {workflows.map((wf) => (
             <Link
               key={wf.id}
@@ -200,4 +205,144 @@ function aggregateWorkflowStatuses(workflows: Workflow[]): WorkflowStatus {
     if (workflows.some((w) => w.status === status)) return status;
   }
   return workflows[0].status;
+}
+
+/** Mini timeline showing all workflows for a pipeline */
+function MiniTimeline({ workflows, pipelineId }: { workflows: Workflow[]; pipelineId: string }) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  const { bars, totalDurationMs } = useMemo(() => {
+    const timedWorkflows = workflows.filter(w => w.created_at);
+    if (timedWorkflows.length === 0) return { bars: [], totalDurationMs: 0 };
+
+    const startTimes = timedWorkflows.map(w => new Date(w.created_at).getTime());
+    const globalStart = Math.min(...startTimes);
+
+    const endTimes = timedWorkflows.map(w =>
+      w.stopped_at ? new Date(w.stopped_at).getTime() : Date.now()
+    );
+    const globalEnd = Math.max(...endTimes);
+    const totalDurationMs = globalEnd - globalStart;
+
+    const sorted = [...timedWorkflows].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    const bars = sorted.map(wf => {
+      const wfStart = new Date(wf.created_at).getTime();
+      const wfEnd = wf.stopped_at ? new Date(wf.stopped_at).getTime() : Date.now();
+      const wfDuration = wfEnd - wfStart;
+
+      const startPct = totalDurationMs > 0 ? ((wfStart - globalStart) / totalDurationMs) * 100 : 0;
+      const widthPct = totalDurationMs > 0 ? (wfDuration / totalDurationMs) * 100 : 100;
+
+      return {
+        workflow: wf,
+        startPct,
+        widthPct: Math.max(widthPct, 2), // minimum 2% width for visibility
+        duration: wfDuration,
+      };
+    });
+
+    return { bars, totalDurationMs };
+  }, [workflows]);
+
+  if (bars.length === 0) return null;
+
+  const ROW_HEIGHT = 28;
+  const svgHeight = bars.length * ROW_HEIGHT + 8;
+
+  return (
+    <div className="px-4 py-3 border-b border-slate-800/50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-slate-500 uppercase tracking-wider">Timeline</span>
+        <span className="text-xs text-slate-600">
+          Total: {formatDuration(totalDurationMs)}
+        </span>
+      </div>
+      <svg width="100%" height={svgHeight} className="overflow-visible">
+        {/* Background track */}
+        <rect
+          x="0"
+          y="0"
+          width="100%"
+          height={svgHeight}
+          fill="#0f172a"
+          rx={4}
+        />
+
+        {bars.map((bar, i) => {
+          const y = i * ROW_HEIGHT + 4;
+          const isHovered = hoveredId === bar.workflow.id;
+
+          return (
+            <Link
+              key={bar.workflow.id}
+              to={`/pipeline/${pipelineId}/workflow/${bar.workflow.id}`}
+            >
+              <g
+                onMouseEnter={() => setHoveredId(bar.workflow.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                className="cursor-pointer"
+              >
+                {/* Workflow bar */}
+                <rect
+                  x={`${bar.startPct}%`}
+                  y={y}
+                  width={`${bar.widthPct}%`}
+                  height={ROW_HEIGHT - 8}
+                  fill={getStatusFill(bar.workflow.status)}
+                  rx={3}
+                  opacity={isHovered ? 1 : 0.8}
+                  stroke={isHovered ? '#fff' : 'none'}
+                  strokeWidth={1}
+                />
+
+                {/* Workflow name (if bar is wide enough) */}
+                {bar.widthPct > 15 && (
+                  <text
+                    x={`${bar.startPct + bar.widthPct / 2}%`}
+                    y={y + (ROW_HEIGHT - 8) / 2}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="white"
+                    fontSize="10"
+                    fontWeight="500"
+                    className="pointer-events-none"
+                  >
+                    {bar.workflow.name}
+                  </text>
+                )}
+
+                {/* Tooltip on hover */}
+                {isHovered && bar.widthPct <= 15 && (
+                  <g>
+                    <rect
+                      x={`${Math.max(0, bar.startPct - 5)}%`}
+                      y={y - 22}
+                      width="80"
+                      height="18"
+                      fill="#1e293b"
+                      stroke="#475569"
+                      rx={3}
+                    />
+                    <text
+                      x={`${Math.max(0, bar.startPct - 5)}%`}
+                      dx="40"
+                      y={y - 11}
+                      textAnchor="middle"
+                      fill="#e2e8f0"
+                      fontSize="10"
+                    >
+                      {bar.workflow.name}
+                    </text>
+                  </g>
+                )}
+              </g>
+            </Link>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
