@@ -19,12 +19,7 @@ This entire project was built by [Claude Code](https://docs.anthropic.com/en/doc
 
 Try it out without installing anything:
 
-- https://subtle-lebkuchen-44887c.netlify.app
-- https://cool-gumption-81e7d8.netlify.app
-
-**Password:** `My-Drop-Site`
-
-> These are temporary Netlify Drop sites and expire after a while. Then just run `npm run build` and drop the `dist` folder on [Netlify Drop](https://app.netlify.com/drop).
+https://newocean.netlify.app
 
 ## Prerequisites
 
